@@ -10,6 +10,8 @@
   6. Скопируйте Web app URL и вставьте его в index.html:
      CONFIG.sheetsWebAppUrl = "ВАШ_WEB_APP_URL";
 
+  Лист Settings (создаётся скриптом): колонки «Ключ» | «Значение», строка siteGatePassword — пароль экрана входа на сайт (по умолчанию подставляется «подземка»).
+
   Таблица будет доступна для записи всем посетителям приложения,
   но приватный ключ сервисного аккаунта не будет опубликован в HTML.
 */
@@ -28,6 +30,10 @@ const SHEETS = {
   transitions: {
     name: "Transitions",
     headers: ["Переход"]
+  },
+  settings: {
+    name: "Settings",
+    headers: ["Ключ", "Значение"]
   }
 };
 
@@ -160,8 +166,36 @@ function setupSheets() {
   const usersSheet = ensureSheet(spreadsheet, SHEETS.users);
   const bookingsSheet = ensureSheet(spreadsheet, SHEETS.bookings);
   const transitionsSheet = ensureSheet(spreadsheet, SHEETS.transitions);
+  const settingsSheet = ensureSheet(spreadsheet, SHEETS.settings);
+  seedSiteGatePasswordIfMissing(settingsSheet);
 
-  return { usersSheet, bookingsSheet, transitionsSheet };
+  return { usersSheet, bookingsSheet, transitionsSheet, settingsSheet };
+}
+
+/** Строка siteGatePassword на листе Settings; при пустом листе — подставляем «подземка». */
+function seedSiteGatePasswordIfMissing(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2 && String(sheet.getRange(2, 1).getDisplayValue() || "").trim()) return;
+  sheet.getRange(2, 1, 2, 2).setValues([["siteGatePassword", "подземка"]]);
+}
+
+function readSettingsKeyValue(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  const values = sheet.getRange(2, 1, lastRow, 2).getDisplayValues();
+  const map = {};
+  values.forEach((row) => {
+    const key = String(row[0] || "").trim();
+    if (key) map[key] = String(row[1] || "").trim();
+  });
+  return map;
+}
+
+function readSiteGatePasswordFromSheet(settingsSheet) {
+  const map = readSettingsKeyValue(settingsSheet);
+  const value = map.siteGatePassword || map["Пароль входа"] || map["пароль входа"];
+  if (value) return value;
+  return "подземка";
 }
 
 function readAllData() {
@@ -169,7 +203,8 @@ function readAllData() {
   return {
     users: readUsers(sheets.usersSheet),
     bookings: readBookings(sheets.bookingsSheet),
-    transitions: readTransitions(sheets.transitionsSheet)
+    transitions: readTransitions(sheets.transitionsSheet),
+    siteGatePassword: readSiteGatePasswordFromSheet(sheets.settingsSheet)
   };
 }
 
@@ -335,13 +370,27 @@ function pad2(value) {
   return value < 10 ? `0${value}` : String(value);
 }
 
+/** Снять «приклеенное» служебное время/метки WhatsApp Web с конца текста (см. Tampermonkey). */
+function stripWhatsAppWebTimeGlue(value) {
+  let s = String(value || "").trim();
+  for (let guard = 0; guard < 12; guard += 1) {
+    const before = s;
+    s = s.replace(/изменено\s*\d{1,2}:\d{2}$/gi, "");
+    s = s.replace(/(\d{1,2})[:.](\d{2})(\d{2}:\d{2})$/, "$1:$2");
+    s = s.replace(/\.{2,}\s*\d{1,2}:\d{2}$/, "");
+    s = s.replace(/\.(?:[01]\d|2[0-3]):[0-5]\d$/, "");
+    if (s === before) break;
+  }
+  return s.trim();
+}
+
 function createBookingFromWhatsApp(payload) {
   const sheets = setupSheets();
   const users = readUsers(sheets.usersSheet);
   const bookings = pruneOldBookings(readBookings(sheets.bookingsSheet));
   const transitions = readTransitions(sheets.transitionsSheet);
   const phoneLast4 = getPhoneLast4(payload.phoneLast4 || "");
-  const message = String(payload.message || "").trim();
+  const message = stripWhatsAppWebTimeGlue(String(payload.message || "")).trim();
   const messageId = makeSafeWhatsAppMessageId(payload, phoneLast4);
   const date = normalizeWhatsappDate(payload.chatDate || payload.date || "");
 
@@ -480,6 +529,7 @@ function splitWhatsAppClauses(message) {
   return String(message)
     .replace(/\s+и\s+на\s+/gi, "\nна ")
     .replace(/\s+и\s+в\s+/gi, "\nв ")
+    .replace(/(встану|встаю|встанет|стану)\s+(на)(?=\s+семь)/gi, "$1\n$2")
     .replace(/(\S)\s+(?=(?:в|на)\s+(?:больш(?:ой|ом)|мал(?:ый|ом)|семь[еяю]|спортивн(?:ая|ой)|горс(?:овет)?|аграрк[ае]?|аграрн(?:ый|ом)|бульвар|юношеск))/gi, "$1\n")
     .replace(/(\S)\s+(?=(?:больш(?:ой|ом)|мал(?:ый|ом)|семь[еяю]|спортивн(?:ая|ой)|горс(?:овет)?|аграрк[ае]?|аграрн(?:ый|ом)|бульвар|юношеск)\s+(?:в\s*)?\d{1,2})/gi, "$1\n")
     .split(/[\n,;]+/)
@@ -518,7 +568,10 @@ function containsWordPhrase(text, phrase) {
 
 function extractTimes(text) {
   const result = [];
-  const normalized = String(text).replace(/(\d{1,2})\s*до\s*(\d{1,2})/gi, "$1:00 до $2:00");
+  const normalized = String(text)
+    .replace(/(\d{1,2})\s*[:.](\d{2})\s*(до)\s*/gi, "$1:$2 $3 ")
+    // Только «голые» часы: не трогать «00 до 16» из хвоста «14:00 до 16:00» (иначе получится 14:00:00 до 16:00:00).
+    .replace(/(?<![\d:.])(\d{1,2})\s*до\s*(\d{1,2})(?![:.]\s*\d)/gi, "$1:00 до $2:00");
   const regexp = /(^|[^\d])(\d{1,2})(?:\s*[:.]\s*(\d{2}))?(?=\s*(?:до|-|—|$|[^\d]))/g;
   let match;
 
@@ -571,8 +624,15 @@ function buildTimeRanges(times) {
 function isExplicitRange(current, next) {
   const raw = String(current.text || "");
   const from = current.endIndex != null ? current.endIndex : current.index;
-  const gap = raw.slice(from, next.index).toLowerCase();
-  if (/\bдо\b|[-—]/.test(gap)) return true;
+  const gapNorm = raw
+    .slice(from, next.index)
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/[-—]/.test(gapNorm)) return true;
+  // Русское «до»: в JS \b опирается на [A-Za-z0-9_], кириллица не «слово» — /\bдо\b/ ломается.
+  if (gapNorm === "до" || /^до(\s|$)/.test(gapNorm)) return true;
   const atNext = raw.charAt(next.index);
   if (atNext === "-" || atNext === "—") return true;
   return false;

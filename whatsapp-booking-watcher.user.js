@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetMusic Ufa WhatsApp booking watcher
 // @namespace    https://streetmusic-ufa.local/
-// @version      0.1.7
+// @version      0.1.11
 // @description  Watches WhatsApp Web messages and sends booking-like messages to StreetMusic Ufa Google Apps Script.
 // @match        https://web.whatsapp.com/*
 // @grant        GM_xmlhttpRequest
@@ -20,6 +20,11 @@
     debug: true,
     /** Подробные логи: почему сообщение пропущено (шумнее консоль) */
     debugVerbose: false,
+    /**
+     * При debug: в консоль — поле message, которое реально уходит в POST (после sanitize).
+     * Номера в тексте вырезаются; phoneLast4 в логе — только суффикс из настроек WA.
+     */
+    debugLogApiMessage: true,
 
     /**
      * Отладка: при загрузке чата несколько раз просканировать уже видимые сообщения
@@ -184,25 +189,66 @@
 
   function isLikelyBookingText(message) {
     const text = message.toLowerCase().replace(/ё/g, "е");
+    const hasKnownPlace =
+      /(семь|семью|семье|горс|больш|мал|цр|спортив|бульвар|аграрн|аграрк|юнош|библиотек)/.test(text);
     const hasTime =
       /\b\d{1,2}\s*[:.]\s*\d{2}\b/.test(text) ||
       /\d{1,2}\s*\.\s*\d{2}\s*[-—]\s*\d{1,2}/.test(text) ||
-      /(^|[\s,.;:])(в|с)\s*\d{1,2}(?=\D|$)/.test(text);
+      /(^|[\s,.;:])(в|с)\s*\d{1,2}(?=\D|$)/.test(text) ||
+      (hasKnownPlace && /(^|\D)\d{1,2}(?=\D|$)/.test(text));
     const hasPlaceOrIntent =
-      /(встан|встаю|встал|брон|заним|отмена|снимаю|форс|семь|семью|семье|горс|больш|мал|цр|спортив|бульвар|аграрн|аграрк|юнош|библиотек)/.test(text);
+      hasKnownPlace || /(встан|встаю|встал|брон|заним|отмена|снимаю|форс)/.test(text);
     return hasTime && hasPlaceOrIntent;
   }
 
+  /**
+   * WhatsApp Web часто «приклеивает» к тексту пузыря служебное время списка (00:01),
+   * метку «Изменено» и т.п.: «16:0000:01», «20.0000:01», «часов.00:00», «…15:30Изменено01:07».
+   * Без этого сервер видит лишнее «время» и ломает диапазоны (14–16 → ещё 16–18).
+   */
+  function stripWhatsAppWebTimeGlue(text) {
+    let s = String(text || "").trim();
+    for (let guard = 0; guard < 12; guard += 1) {
+      const before = s;
+      s = s.replace(/изменено\s*\d{1,2}:\d{2}$/giu, "");
+      s = s.replace(/(\d{1,2})[:.](\d{2})(\d{2}:\d{2})$/u, "$1:$2");
+      s = s.replace(/\.{2,}\s*\d{1,2}:\d{2}$/u, "");
+      s = s.replace(/\.(?:[01]\d|2[0-3]):[0-5]\d$/u, "");
+      if (s === before) break;
+    }
+    return s.trim();
+  }
+
   function sanitizeMessageForApi(message) {
-    return String(message || "")
+    let s = stripWhatsAppWebTimeGlue(String(message || ""));
+    s = s
       .replace(/\+?\d[\d\s().-]{6,}\d/g, "")
       .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+    return s;
+  }
+
+  function debugPreviewMessage(text, maxLen) {
+    const limit = typeof maxLen === "number" ? maxLen : 240;
+    const cleaned = sanitizeMessageForApi(text);
+    if (cleaned.length <= limit) return cleaned;
+    return `${cleaned.slice(0, limit)}…`;
   }
 
   function postBooking(payload) {
     const body = JSON.stringify({ action: "whatsappBooking", ...payload });
+
+    if (CONFIG.debug && CONFIG.debugLogApiMessage) {
+      console.log("[StreetMusic WA] POST message (sanitized):", payload.message);
+      console.log("[StreetMusic WA] POST meta:", {
+        chatDate: payload.chatDate,
+        chatTime: payload.chatTime,
+        phoneLast4: payload.phoneLast4,
+        messageId: payload.messageId,
+        messageLen: String(payload.message || "").length
+      });
+    }
 
     if (typeof GM_xmlhttpRequest === "function") {
       GM_xmlhttpRequest({
@@ -212,7 +258,7 @@
         data: body,
         onload: (response) => {
           if (CONFIG.debug) {
-            console.log("[StreetMusic WA]", response.status, response.responseText);
+            console.log("[StreetMusic WA] response:", response.status, response.responseText);
           }
         },
         onerror: (error) => console.warn("[StreetMusic WA] request failed", error)
@@ -276,19 +322,30 @@
 
     if (!shouldSend) return;
 
-    if (!isLikelyBookingText(message)) {
+    /** Как для API: без «приклеенного» времени WA — иначе жалоба «…не появилась...01:02» уходит как бронь */
+    const messageForHeuristic = stripWhatsAppWebTimeGlue(message);
+    if (!isLikelyBookingText(messageForHeuristic)) {
       if (CONFIG.debug) {
-        console.log("[StreetMusic WA] ignored (not booking-like):", messageId);
+        console.log(
+          "[StreetMusic WA] ignored (not booking-like):",
+          messageId,
+          CONFIG.debugLogApiMessage ? debugPreviewMessage(message) : ""
+        );
       }
       return;
     }
 
     if (CONFIG.debug) {
-      console.log("[StreetMusic WA] sending:", messageId);
+      console.log("[StreetMusic WA] sending:", messageId, CONFIG.debugLogApiMessage ? debugPreviewMessage(message) : "");
     }
 
     const messageForApi = sanitizeMessageForApi(message);
-    if (!messageForApi) return;
+    if (!messageForApi) {
+      if (CONFIG.debug) {
+        console.warn("[StreetMusic WA] skip send: message empty after sanitize", messageId, debugPreviewMessage(message));
+      }
+      return;
+    }
 
     postBooking({
       phoneLast4: meta.phoneLast4,

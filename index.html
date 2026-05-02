@@ -896,9 +896,84 @@
         max-width: calc(100vw - 20px);
       }
     }
+
+    .site-gate {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 2147483000;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top left, rgba(139, 92, 246, 0.28), transparent 36rem),
+        radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.2), transparent 32rem),
+        rgba(9, 11, 18, 0.96);
+    }
+
+    html.site-gate-pending .site-gate {
+      display: flex;
+    }
+
+    html.site-gate-pending .app {
+      display: none !important;
+    }
+
+    .site-gate-card {
+      width: min(400px, 100%);
+      padding: 28px 26px 24px;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(22, 26, 39, 0.95);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    }
+
+    .site-gate-card h2 {
+      margin: 0 0 6px;
+      font-size: 1.35rem;
+      letter-spacing: -0.02em;
+    }
+
+    .site-gate-hint {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .site-gate-form {
+      display: grid;
+      gap: 12px;
+    }
+
+    .site-gate-form input[type="password"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(14, 18, 29, 0.9);
+      color: var(--text);
+    }
+
+    .site-gate-error {
+      margin: 0;
+      font-size: 13px;
+      color: var(--red);
+    }
   </style>
 </head>
 <body>
+  <div id="siteGate" class="site-gate" aria-modal="true" role="dialog" aria-labelledby="siteGateTitle" hidden>
+    <div class="site-gate-card">
+      <h2 id="siteGateTitle">StreetMusic Ufa</h2>
+      <p class="site-gate-hint">Введите пароль команды, чтобы открыть расписание.</p>
+      <form class="site-gate-form" id="siteGateForm">
+        <input id="siteGateInput" name="gate" type="password" autocomplete="current-password" required placeholder="Пароль" />
+        <button type="submit" class="btn" id="siteGateSubmit">Войти</button>
+        <p id="siteGateError" class="site-gate-error" hidden></p>
+      </form>
+    </div>
+  </div>
   <main class="app">
     <section class="hero">
       <div class="title-block">
@@ -1124,11 +1199,17 @@
       - Вставьте URL деплоя в CONFIG.sheetsWebAppUrl ниже.
       - Пока URL пустой или API недоступен, приложение сохраняет данные на устройстве.
       - Лист Users: колонка «Телефон 4 цифры» (последний столбец) — для сопоставления с WhatsApp; старые строки можно заполнить вручную.
+      - Пароль на вход: лист Settings в таблице (ключ siteGatePassword, значение — пароль). При первом деплое скрипт создаёт строку с «подземка». Успешный ввод хранится в localStorage (хэш), без срока.
+      - Если Google недоступен, можно задать запасной пароль в siteGatePasswordFallback (ниже).
     */
 
     const CONFIG = {
       spreadsheetId: "1g7xiuT1uECXvM-8uTITAy2J0sxbXQrWG2eEPgiZGv-k",
       sheetsWebAppUrl: "https://script.google.com/macros/s/AKfycbzqBWxUthTdOt09gBxesmhghlBD927fm7glmh2xy5cERx5tz-fHTlQ5O4C1x0S77JHt/exec",
+      /** Если read не вернул пароль (офлайн и т.п.): непустая строка включает ворота с этим паролем. */
+      siteGatePasswordFallback: "",
+      /** Хэш SHA-256 от «siteGate|v1|» + пароль из таблицы; смена пароля в Settings сбрасывает «запоминание». */
+      siteGateStorageKey: "streetmusic-ufa-site-gate",
       autoRefreshMs: 30000,
       requestTimeoutMs: 8000,
       storageKey: "streetmusic-ufa-v1",
@@ -1138,6 +1219,7 @@
       dayEndHour: 24,
       slotMinutes: 30
     };
+
     const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
     const WARNING_TEXT = "⚠️ Внимание! Правилами разрешено бронировать не более 2 часов для одного человека и не более 4 часов для двух человек.";
@@ -2383,6 +2465,94 @@
       });
     }
 
+    function releaseSiteGate() {
+      document.documentElement.classList.remove("site-gate-pending");
+      const gate = document.getElementById("siteGate");
+      if (gate) gate.hidden = true;
+    }
+
+    function siteGateUnlockToken(secret) {
+      return hashPassword(`siteGate|v1|${String(secret || "").trim()}`);
+    }
+
+    function mountSiteGate(secret, expectedToken) {
+      const gate = document.getElementById("siteGate");
+      const form = document.getElementById("siteGateForm");
+      const input = document.getElementById("siteGateInput");
+      const err = document.getElementById("siteGateError");
+      if (!gate || !form || !input) return;
+
+      gate.hidden = false;
+      input.value = "";
+      if (err) {
+        err.hidden = true;
+        err.textContent = "";
+      }
+      window.setTimeout(() => input.focus(), 80);
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const value = String(input.value || "").trim();
+        if (value !== String(secret || "").trim()) {
+          if (err) {
+            err.textContent = "Неверный пароль";
+            err.hidden = false;
+          }
+          input.select();
+          return;
+        }
+        try {
+          localStorage.setItem(CONFIG.siteGateStorageKey, expectedToken);
+        } catch (e) {
+          /* ignore */
+        }
+        releaseSiteGate();
+        form.replaceWith(form.cloneNode(true));
+        await init();
+      });
+    }
+
+    async function boot() {
+      if (SheetsStore.isConfigured()) {
+        document.documentElement.classList.add("site-gate-pending");
+      }
+
+      let secret = "";
+      if (SheetsStore.isConfigured()) {
+        try {
+          const remote = await SheetsStore.read();
+          secret = String(remote.siteGatePassword || "").trim();
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+      if (!secret) {
+        secret = String(CONFIG.siteGatePasswordFallback || "").trim();
+      }
+      if (!secret) {
+        releaseSiteGate();
+        await init();
+        return;
+      }
+
+      const expectedToken = await siteGateUnlockToken(secret);
+      let stored = "";
+      try {
+        stored = localStorage.getItem(CONFIG.siteGateStorageKey) || "";
+      } catch (e) {
+        stored = "";
+      }
+
+      if (stored && stored === expectedToken) {
+        releaseSiteGate();
+        await init();
+        return;
+      }
+
+      document.documentElement.classList.add("site-gate-pending");
+      mountSiteGate(secret, expectedToken);
+    }
+
     async function init() {
       enforceTodayDate();
       applyZoomMode();
@@ -2424,7 +2594,7 @@
       window.addEventListener("resize", applyZoomMode);
     }
 
-    init();
+    boot();
   </script>
 </body>
 </html>

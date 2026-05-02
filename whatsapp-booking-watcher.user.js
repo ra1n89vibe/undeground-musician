@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetMusic Ufa WhatsApp booking watcher
 // @namespace    https://streetmusic-ufa.local/
-// @version      0.1.5
+// @version      0.1.7
 // @description  Watches WhatsApp Web messages and sends booking-like messages to StreetMusic Ufa Google Apps Script.
 // @match        https://web.whatsapp.com/*
 // @grant        GM_xmlhttpRequest
@@ -41,6 +41,10 @@
 
   const seen = new Set(JSON.parse(sessionStorage.getItem("streetmusic-wa-seen") || "[]"));
 
+  const CONTACT_PHONE_LAST4_BY_NAME = {
+    "сергей король": "4779"
+  };
+
   function saveSeen() {
     sessionStorage.setItem("streetmusic-wa-seen", JSON.stringify([...seen].slice(-1000)));
   }
@@ -48,11 +52,12 @@
   function parsePlainText(value) {
     const match = String(value || "").match(/^\[(\d{1,2}:\d{2}),\s*(\d{1,2}[./]\d{1,2}[./]\d{4})\]\s*(.*?):\s*$/);
     if (!match) return null;
+    const sender = match[3];
 
     return {
       chatTime: match[1],
       chatDate: match[2],
-      phoneLast4: getPhoneLast4(match[3])
+      phoneLast4: getPhoneLast4(sender) || getPhoneLast4ByContactName(sender)
     };
   }
 
@@ -63,9 +68,62 @@
       .trim();
   }
 
+  function getMessageTextWithoutQuotedReply(node) {
+    const quotedReply = node.querySelector("[data-testid='quoted-message'], [aria-label*='Цитируемое'], [aria-label*='Quoted']");
+    if (quotedReply) {
+      quotedReply.remove();
+    }
+
+    const rawText = getMessageText(node);
+    return stripLikelyQuotedReplyText(rawText);
+  }
+
+  function stripLikelyQuotedReplyText(text) {
+    const lines = String(text || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length < 2) return String(text || "").trim();
+
+    const lastLine = lines[lines.length - 1];
+    const hasQuotedContactLine = lines
+      .slice(0, -1)
+      .some((line) => /^~?\s*[\p{L}\p{N} ._-]{2,}(?:\s+\d{4})?$|^\+?\d[\d\s().-]{6,}\d$/u.test(line));
+    const previousTextLooksBooking = lines
+      .slice(0, -1)
+      .some((line) => isLikelyBookingText(line));
+
+    if (hasQuotedContactLine && previousTextLooksBooking && isLikelyBookingText(lastLine)) {
+      return lastLine;
+    }
+
+    return String(text || "").trim();
+  }
+
   function getPhoneLast4(value) {
     const digits = String(value || "").replace(/\D/g, "");
     return digits.length >= 4 ? digits.slice(-4) : "";
+  }
+
+  function getPhoneLast4ByContactName(value) {
+    const normalized = normalizeContactName(value);
+    const keys = Object.keys(CONTACT_PHONE_LAST4_BY_NAME)
+      .sort((first, second) => second.length - first.length);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = normalizeContactName(keys[index]);
+      if (normalized.includes(key)) return CONTACT_PHONE_LAST4_BY_NAME[keys[index]];
+    }
+    return "";
+  }
+
+  function normalizeContactName(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function logVerbose(reason, detail) {
@@ -131,7 +189,7 @@
       /\d{1,2}\s*\.\s*\d{2}\s*[-—]\s*\d{1,2}/.test(text) ||
       /(^|[\s,.;:])(в|с)\s*\d{1,2}(?=\D|$)/.test(text);
     const hasPlaceOrIntent =
-      /(встан|встаю|встал|брон|заним|отмена|снимаю|форс|семь|семью|семье|горс|больш|мал|цр|спортив|бульвар|аграрн|монумент|юнош|библиотек)/.test(text);
+      /(встан|встаю|встал|брон|заним|отмена|снимаю|форс|семь|семью|семье|горс|больш|мал|цр|спортив|бульвар|аграрн|аграрк|юнош|библиотек)/.test(text);
     return hasTime && hasPlaceOrIntent;
   }
 
@@ -200,7 +258,7 @@
       return;
     }
 
-    const message = getMessageText(root);
+    const message = getMessageTextWithoutQuotedReply(root.cloneNode(true));
     if (!message) {
       logVerbose("empty message text", "");
       return;

@@ -68,6 +68,9 @@ const WHATSAPP_TRANSITION_ALIASES = {
   "бульвар": "Бульвар Славы"
 };
 
+const BOOKING_RETENTION_DAYS = 7;
+const WHATSAPP_AUTO_AVATARS = ["cat", "dog", "rabbit", "bear", "fox", "raccoon", "owl", "hamster", "panda", "dragon"];
+
 function doGet() {
   return jsonResponse({
     ok: true,
@@ -222,7 +225,7 @@ function readTransitions(sheet) {
 function writeAllData(payload) {
   const sheets = setupSheets();
   writeUsers(sheets.usersSheet, Array.isArray(payload.users) ? payload.users : []);
-  writeBookings(sheets.bookingsSheet, Array.isArray(payload.bookings) ? payload.bookings : []);
+  writeBookings(sheets.bookingsSheet, pruneOldBookings(Array.isArray(payload.bookings) ? payload.bookings : []));
   writeTransitions(sheets.transitionsSheet, Array.isArray(payload.transitions) && payload.transitions.length ? payload.transitions : DEFAULT_TRANSITIONS);
 }
 
@@ -268,7 +271,7 @@ function writeBookings(sheet, bookings) {
     booking.createdAt || "",
     booking.people || 1,
     booking.source || "",
-    booking.sourceMessageId || ""
+    sanitizeSourceMessageId(booking.sourceMessageId || "")
   ]);
 
   replaceRows(sheet, SHEETS.bookings.headers, rows);
@@ -332,11 +335,11 @@ function pad2(value) {
 function createBookingFromWhatsApp(payload) {
   const sheets = setupSheets();
   const users = readUsers(sheets.usersSheet);
-  const bookings = readBookings(sheets.bookingsSheet);
+  const bookings = pruneOldBookings(readBookings(sheets.bookingsSheet));
   const transitions = readTransitions(sheets.transitionsSheet);
-  const phoneLast4 = getPhoneLast4(payload.phone || payload.sender || "");
+  const phoneLast4 = getPhoneLast4(payload.phoneLast4 || "");
   const message = String(payload.message || "").trim();
-  const messageId = String(payload.messageId || "").trim() || makeWhatsAppMessageId(payload);
+  const messageId = makeSafeWhatsAppMessageId(payload, phoneLast4);
   const date = normalizeWhatsappDate(payload.chatDate || payload.date || "");
 
   if (!phoneLast4) {
@@ -402,7 +405,7 @@ function createBookingFromWhatsApp(payload) {
   });
 
   writeUsers(sheets.usersSheet, users);
-  writeBookings(sheets.bookingsSheet, bookings);
+  writeBookings(sheets.bookingsSheet, pruneOldBookings(bookings));
 
   return {
     ok: true,
@@ -410,7 +413,7 @@ function createBookingFromWhatsApp(payload) {
     created,
     cancelled,
     conflicts,
-    ignored: parsed.ignored,
+    ignored: summarizeIgnoredClauses(parsed.ignored),
     messageId
   };
 }
@@ -587,7 +590,7 @@ function findOrCreateWhatsAppUser(users, phoneLast4) {
     name: `WhatsApp ${phoneLast4}`,
     alias: `WA ${phoneLast4}`,
     passwordHash: "",
-    avatar: "owl",
+    avatar: avatarForPhoneLast4(phoneLast4),
     createdAt: new Date().toISOString(),
     bio: "Автоматически создан из WhatsApp-чата",
     music: "",
@@ -608,16 +611,73 @@ function normalizeWhatsappDate(value) {
 
 function getPhoneLast4(value) {
   const digits = String(value || "").replace(/\D/g, "");
-  return digits.length >= 4 ? digits.slice(-4) : "";
+  return digits.length === 4 ? digits : "";
 }
 
-function makeWhatsAppMessageId(payload) {
-  return Utilities.base64EncodeWebSafe([
-    payload.phone || "",
+function makeSafeWhatsAppMessageId(payload, phoneLast4) {
+  const supplied = String(payload.messageId || "").trim();
+  if (supplied && !looksLikePrivateWhatsAppId(supplied)) {
+    return supplied.slice(0, 120);
+  }
+
+  return `wa_${shortHash([
+    phoneLast4 || "",
     payload.chatDate || "",
     payload.chatTime || "",
     payload.message || ""
-  ].join("|")).slice(0, 120);
+  ].join("|"))}`;
+}
+
+function looksLikePrivateWhatsAppId(value) {
+  return /(\+?\d[\d\s().-]{6,}\d)|\n|[а-яА-ЯёЁ]{3,}/.test(String(value || ""));
+}
+
+function sanitizeSourceMessageId(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (!looksLikePrivateWhatsAppId(text)) return text.slice(0, 120);
+  return `legacy_${shortHash(text)}`;
+}
+
+function shortHash(value) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(value || ""),
+    Utilities.Charset.UTF_8
+  );
+  return digest
+    .slice(0, 12)
+    .map((byte) => (byte < 0 ? byte + 256 : byte).toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function summarizeIgnoredClauses(ignored) {
+  const counts = {};
+  (Array.isArray(ignored) ? ignored : []).forEach((item) => {
+    const reason = item && item.reason ? String(item.reason) : "unknown";
+    counts[reason] = (counts[reason] || 0) + 1;
+  });
+  return Object.keys(counts).map((reason) => ({ reason, count: counts[reason] }));
+}
+
+function avatarForPhoneLast4(phoneLast4) {
+  const digits = String(phoneLast4 || "").replace(/\D/g, "");
+  const number = Number(digits || 0);
+  return WHATSAPP_AUTO_AVATARS[number % WHATSAPP_AUTO_AVATARS.length] || "owl";
+}
+
+function pruneOldBookings(bookings) {
+  const cutoff = retentionCutoffDate();
+  return (Array.isArray(bookings) ? bookings : []).filter((booking) => {
+    const date = normalizeDateValue(booking && booking.date);
+    return !date || date >= cutoff;
+  });
+}
+
+function retentionCutoffDate() {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - BOOKING_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  return Utilities.formatDate(cutoff, "Asia/Yekaterinburg", "yyyy-MM-dd");
 }
 
 function makeId(prefix) {

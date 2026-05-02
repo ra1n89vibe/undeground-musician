@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetMusic Ufa WhatsApp booking watcher
 // @namespace    https://streetmusic-ufa.local/
-// @version      0.1.4
+// @version      0.1.5
 // @description  Watches WhatsApp Web messages and sends booking-like messages to StreetMusic Ufa Google Apps Script.
 // @match        https://web.whatsapp.com/*
 // @grant        GM_xmlhttpRequest
@@ -26,9 +26,9 @@
      * только за сегодня (по дате в data-pre-plain-text, часовой пояс Уфы).
      * После проверки поставьте false, чтобы не гонять API при каждом F5.
      */
-    debugBackfillToday: true,
+    debugBackfillToday: false,
     /** Перед догоном очистить seen — иначе уже обработанные сегодняшние не отправятся повторно */
-    debugBackfillTodayClearSeen: true,
+    debugBackfillTodayClearSeen: false,
     /** Задержки (мс) после старта: WhatsApp подгружает пузыри не сразу */
     debugBackfillDelaysMs: [2500, 7000, 15000],
 
@@ -52,8 +52,7 @@
     return {
       chatTime: match[1],
       chatDate: match[2],
-      sender: match[3],
-      phone: match[3]
+      phoneLast4: getPhoneLast4(match[3])
     };
   }
 
@@ -64,10 +63,9 @@
       .trim();
   }
 
-  /** В строке «+7 961 360-36-96» нет 4 цифр подряд — только суммарно; старый /\d{4,}/ ломал все такие номера. */
-  function hasEnoughPhoneDigits(sender) {
-    const digits = String(sender || "").replace(/\D/g, "");
-    return digits.length >= 10;
+  function getPhoneLast4(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    return digits.length >= 4 ? digits.slice(-4) : "";
   }
 
   function logVerbose(reason, detail) {
@@ -107,8 +105,23 @@
     return chatDateToIso(chatDate) === ufaTodayIso();
   }
 
+  function privacyHash(value) {
+    let hash = 2166136261;
+    const text = String(value || "");
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  }
+
   function getMessageId(meta, message) {
-    return [meta.sender, meta.chatDate, meta.chatTime, message].join("|");
+    return [
+      meta.phoneLast4,
+      meta.chatDate,
+      meta.chatTime,
+      privacyHash(message)
+    ].join("|");
   }
 
   function isLikelyBookingText(message) {
@@ -120,6 +133,14 @@
     const hasPlaceOrIntent =
       /(встан|встаю|встал|брон|заним|отмена|снимаю|форс|семь|семью|семье|горс|больш|мал|цр|спортив|бульвар|аграрн|монумент|юнош|библиотек)/.test(text);
     return hasTime && hasPlaceOrIntent;
+  }
+
+  function sanitizeMessageForApi(message) {
+    return String(message || "")
+      .replace(/\+?\d[\d\s().-]{6,}\d/g, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
   function postBooking(payload) {
@@ -181,11 +202,11 @@
 
     const message = getMessageText(root);
     if (!message) {
-      logVerbose("empty message text", meta.sender);
+      logVerbose("empty message text", "");
       return;
     }
-    if (!hasEnoughPhoneDigits(meta.phone)) {
-      logVerbose("phone digits < 10", meta.sender);
+    if (!meta.phoneLast4) {
+      logVerbose("phoneLast4 missing", "");
       return;
     }
 
@@ -199,21 +220,23 @@
 
     if (!isLikelyBookingText(message)) {
       if (CONFIG.debug) {
-        console.log("[StreetMusic WA] ignored (not booking-like):", message.slice(0, 120));
+        console.log("[StreetMusic WA] ignored (not booking-like):", messageId);
       }
       return;
     }
 
     if (CONFIG.debug) {
-      console.log("[StreetMusic WA] sending:", message.slice(0, 120));
+      console.log("[StreetMusic WA] sending:", messageId);
     }
 
+    const messageForApi = sanitizeMessageForApi(message);
+    if (!messageForApi) return;
+
     postBooking({
-      phone: meta.phone,
-      sender: meta.sender,
+      phoneLast4: meta.phoneLast4,
       chatDate: meta.chatDate,
       chatTime: meta.chatTime,
-      message,
+      message: messageForApi,
       messageId
     });
   }

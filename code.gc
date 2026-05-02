@@ -1,0 +1,645 @@
+/*
+  Google Apps Script для StreetMusic Ufa.
+
+  Как подключить:
+  1. Откройте https://script.google.com/ и создайте новый проект.
+  2. Вставьте этот код в файл Code.gs.
+  3. Нажмите Deploy -> New deployment -> Web app.
+  4. Execute as: Me.
+  5. Who has access: Anyone.
+  6. Скопируйте Web app URL и вставьте его в index.html:
+     CONFIG.sheetsWebAppUrl = "ВАШ_WEB_APP_URL";
+
+  Таблица будет доступна для записи всем посетителям приложения,
+  но приватный ключ сервисного аккаунта не будет опубликован в HTML.
+*/
+
+const SPREADSHEET_ID = "1g7xiuT1uECXvM-8uTITAy2J0sxbXQrWG2eEPgiZGv-k";
+
+const SHEETS = {
+  users: {
+    name: "Users",
+    headers: ["ID", "Имя", "Псевдоним", "Пароль(хэш)", "Аватарка", "Дата регистрации", "О себе", "Музыка", "Телефон 4 цифры"]
+  },
+  bookings: {
+    name: "Bookings",
+    headers: ["ID", "Переход", "Дата", "Время начала", "Время конца", "User ID", "Имя", "Псевдоним", "Аватарка", "Дата создания", "Участников", "Источник", "ID сообщения"]
+  },
+  transitions: {
+    name: "Transitions",
+    headers: ["Переход"]
+  }
+};
+
+/** Список по умолчанию только для пустого листа Transitions и фолбэка в read; в таблицу новые строки не добавляем автоматически. */
+const DEFAULT_TRANSITIONS = [
+  "Монумент Дружбы",
+  "Большой ЦР",
+  "Малый ЦР",
+  "Аграрный",
+  "Спортивная",
+  "Семья",
+  "Юношеская библиотека",
+  "Горсовет",
+  "Бульвар Славы"
+];
+
+const WHATSAPP_TRANSITION_ALIASES = {
+  "юношеская библиотека": "Юношеская библиотека",
+  "юн библ": "Юношеская библиотека",
+  "монумент дружбы": "Монумент Дружбы",
+  "монумент": "Монумент Дружбы",
+  "аграрный": "Аграрный",
+  "аграрн": "Аграрный",
+  "большой цр": "Большой ЦР",
+  "цр большой": "Большой ЦР",
+  "большой": "Большой ЦР",
+  "малый цр": "Малый ЦР",
+  "цр малый": "Малый ЦР",
+  "малый": "Малый ЦР",
+  "семья": "Семья",
+  "семье": "Семья",
+  "семью": "Семья",
+  "горсовет": "Горсовет",
+  "горс": "Горсовет",
+  "спортивная": "Спортивная",
+  "спорт": "Спортивная",
+  "бульвар славы": "Бульвар Славы",
+  "бульвар": "Бульвар Славы"
+};
+
+function doGet() {
+  return jsonResponse({
+    ok: true,
+    message: "StreetMusic Ufa API is running",
+    data: readAllData()
+  });
+}
+
+function doPost(event) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const payload = parsePayload(event);
+
+    if (payload.action === "read") {
+      return jsonResponse(readAllData());
+    }
+
+    if (payload.action === "write") {
+      writeAllData(payload);
+      return jsonResponse({ ok: true, ...readAllData() });
+    }
+
+    if (payload.action === "whatsappBooking") {
+      return jsonResponse(createBookingFromWhatsApp(payload));
+    }
+
+    return jsonResponse({ ok: false, error: "Unknown action" });
+  } catch (error) {
+    return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (error) {
+      // ignore lock release errors
+    }
+  }
+}
+
+function parsePayload(event) {
+  if (!event || !event.postData || !event.postData.contents) {
+    return {};
+  }
+
+  return JSON.parse(event.postData.contents);
+}
+
+function jsonResponse(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getSpreadsheet() {
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
+}
+
+function ensureSheet(spreadsheet, config) {
+  let sheet = spreadsheet.getSheetByName(config.name);
+  if (!sheet) {
+    try {
+      sheet = spreadsheet.insertSheet(config.name);
+    } catch (error) {
+      // При параллельных запросах другой поток может создать лист на миллисекунду раньше.
+      sheet = spreadsheet.getSheetByName(config.name);
+      if (!sheet) throw error;
+    }
+  }
+
+  const width = config.headers.length;
+  const currentHeaders = sheet.getRange(1, 1, 1, width).getValues()[0];
+  const hasHeaders = currentHeaders.some((value) => value !== "");
+
+  if (!hasHeaders) {
+    sheet.getRange(1, 1, 1, width).setValues([config.headers]);
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
+}
+
+function setupSheets() {
+  const spreadsheet = getSpreadsheet();
+  const usersSheet = ensureSheet(spreadsheet, SHEETS.users);
+  const bookingsSheet = ensureSheet(spreadsheet, SHEETS.bookings);
+  const transitionsSheet = ensureSheet(spreadsheet, SHEETS.transitions);
+
+  return { usersSheet, bookingsSheet, transitionsSheet };
+}
+
+function readAllData() {
+  const sheets = setupSheets();
+  return {
+    users: readUsers(sheets.usersSheet),
+    bookings: readBookings(sheets.bookingsSheet),
+    transitions: readTransitions(sheets.transitionsSheet)
+  };
+}
+
+function readRows(sheet, columnCount) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  // Важно: getDisplayValues() возвращает строку так, как она видна в таблице,
+  // без timezone-сдвигов Date-объектов.
+  return sheet.getRange(2, 1, lastRow - 1, columnCount).getDisplayValues();
+}
+
+function readUsers(sheet) {
+  return readRows(sheet, SHEETS.users.headers.length)
+    .filter((row) => row[0])
+    .map((row) => ({
+      id: String(row[0]),
+      name: String(row[1] || ""),
+      alias: String(row[2] || ""),
+      passwordHash: String(row[3] || ""),
+      avatar: String(row[4] || "cat"),
+      createdAt: String(row[5] || ""),
+      bio: String(row[6] || ""),
+      music: String(row[7] || ""),
+      phoneLast4: String(row[8] || "")
+    }));
+}
+
+function readBookings(sheet) {
+  return readRows(sheet, SHEETS.bookings.headers.length)
+    .filter((row) => row[0])
+    .map((row) => ({
+      id: String(row[0]),
+      transition: String(row[1] || ""),
+      date: normalizeDateValue(row[2]),
+      startTime: normalizeTimeValue(row[3]),
+      endTime: normalizeTimeValue(row[4]),
+      userId: String(row[5] || ""),
+      name: String(row[6] || ""),
+      alias: String(row[7] || ""),
+      avatar: String(row[8] || "cat"),
+      createdAt: String(row[9] || ""),
+      people: Number(row[10] || 1),
+      source: String(row[11] || ""),
+      sourceMessageId: String(row[12] || "")
+    }));
+}
+
+function readTransitions(sheet) {
+  const transitions = readRows(sheet, 1)
+    .map((row) => String(row[0] || "").trim())
+    .filter(Boolean);
+
+  return transitions.length ? transitions : DEFAULT_TRANSITIONS;
+}
+
+function writeAllData(payload) {
+  const sheets = setupSheets();
+  writeUsers(sheets.usersSheet, Array.isArray(payload.users) ? payload.users : []);
+  writeBookings(sheets.bookingsSheet, Array.isArray(payload.bookings) ? payload.bookings : []);
+  writeTransitions(sheets.transitionsSheet, Array.isArray(payload.transitions) && payload.transitions.length ? payload.transitions : DEFAULT_TRANSITIONS);
+}
+
+function replaceRows(sheet, headers, rows) {
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.setFrozenRows(1);
+
+  if (rows.length) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  }
+
+  sheet.autoResizeColumns(1, headers.length);
+}
+
+function writeUsers(sheet, users) {
+  const rows = users.map((user) => [
+    user.id || "",
+    user.name || "",
+    user.alias || "",
+    user.passwordHash || "",
+    user.avatar || "cat",
+    user.createdAt || "",
+    user.bio || "",
+    user.music || "",
+    user.phoneLast4 || ""
+  ]);
+
+  replaceRows(sheet, SHEETS.users.headers, rows);
+}
+
+function writeBookings(sheet, bookings) {
+  const rows = bookings.map((booking) => [
+    booking.id || "",
+    booking.transition || "",
+    normalizeDateValue(booking.date || ""),
+    normalizeTimeValue(booking.startTime || ""),
+    normalizeTimeValue(booking.endTime || ""),
+    booking.userId || "",
+    booking.name || "",
+    booking.alias || "",
+    booking.avatar || "cat",
+    booking.createdAt || "",
+    booking.people || 1,
+    booking.source || "",
+    booking.sourceMessageId || ""
+  ]);
+
+  replaceRows(sheet, SHEETS.bookings.headers, rows);
+}
+
+function writeTransitions(sheet, transitions) {
+  const rows = transitions.map((transition) => [transition]);
+  replaceRows(sheet, SHEETS.transitions.headers, rows);
+}
+
+function normalizeDateValue(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+    return trimmed;
+  }
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return String(value || "");
+}
+
+function normalizeTimeValue(value) {
+  if (typeof value === "string") {
+    const normalized = parseTimeString(value.trim());
+    return normalized || value.trim();
+  }
+  if (value instanceof Date) {
+    return roundToHalfHour(
+      Number(Utilities.formatDate(value, Session.getScriptTimeZone(), "HH")),
+      Number(Utilities.formatDate(value, Session.getScriptTimeZone(), "mm"))
+    );
+  }
+  return String(value || "");
+}
+
+function parseTimeString(value) {
+  const match = value.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return "";
+  return roundToHalfHour(hour, minute);
+}
+
+function roundToHalfHour(hour, minute) {
+  const totalMinutes = hour * 60 + minute;
+  const rounded = Math.round(totalMinutes / 30) * 30;
+  const clamped = Math.min(24 * 60, Math.max(0, rounded));
+  const normalizedHour = Math.floor(clamped / 60);
+  const normalizedMinute = clamped % 60;
+  return `${pad2(normalizedHour)}:${pad2(normalizedMinute)}`;
+}
+
+function pad2(value) {
+  return value < 10 ? `0${value}` : String(value);
+}
+
+function createBookingFromWhatsApp(payload) {
+  const sheets = setupSheets();
+  const users = readUsers(sheets.usersSheet);
+  const bookings = readBookings(sheets.bookingsSheet);
+  const transitions = readTransitions(sheets.transitionsSheet);
+  const phoneLast4 = getPhoneLast4(payload.phone || payload.sender || "");
+  const message = String(payload.message || "").trim();
+  const messageId = String(payload.messageId || "").trim() || makeWhatsAppMessageId(payload);
+  const date = normalizeWhatsappDate(payload.chatDate || payload.date || "");
+
+  if (!phoneLast4) {
+    return { ok: false, error: "Не удалось определить последние 4 цифры телефона" };
+  }
+
+  if (!message) {
+    return { ok: false, error: "Пустое сообщение" };
+  }
+
+  if (bookings.some((booking) => String(booking.sourceMessageId || "").split("#")[0] === messageId)) {
+    return { ok: true, status: "duplicate", messageId };
+  }
+
+  const parsed = parseWhatsAppBookingMessage(message, transitions, date);
+  if (!parsed.actions.length) {
+    return { ok: true, status: "ignored", reason: parsed.reason || "В сообщении не найдена бронь", messageId };
+  }
+
+  const user = findOrCreateWhatsAppUser(users, phoneLast4);
+  const created = [];
+  const cancelled = [];
+  const conflicts = [];
+
+  parsed.actions.forEach((action, index) => {
+    if (action.type === "cancel") {
+      const before = bookings.length;
+      for (let bookingIndex = bookings.length - 1; bookingIndex >= 0; bookingIndex -= 1) {
+        const booking = bookings[bookingIndex];
+        if (booking.date !== action.date || booking.userId !== user.id) continue;
+        if (action.transition && booking.transition !== action.transition) continue;
+        if (action.startTime && booking.startTime !== action.startTime) continue;
+        bookings.splice(bookingIndex, 1);
+      }
+      if (before !== bookings.length) {
+        cancelled.push(action);
+      }
+      return;
+    }
+
+    if (hasBookingConflictInList(bookings, action.transition, action.date, action.startTime, action.endTime)) {
+      conflicts.push(action);
+      return;
+    }
+
+    const booking = {
+      id: makeId("booking"),
+      transition: action.transition,
+      date: action.date,
+      startTime: action.startTime,
+      endTime: action.endTime,
+      userId: user.id,
+      name: user.name,
+      alias: user.alias,
+      avatar: user.avatar,
+      createdAt: new Date().toISOString(),
+      people: 1,
+      source: "whatsapp",
+      sourceMessageId: `${messageId}#${index}`
+    };
+    bookings.push(booking);
+    created.push(booking);
+  });
+
+  writeUsers(sheets.usersSheet, users);
+  writeBookings(sheets.bookingsSheet, bookings);
+
+  return {
+    ok: true,
+    status: created.length || cancelled.length ? "processed" : "no_changes",
+    created,
+    cancelled,
+    conflicts,
+    ignored: parsed.ignored,
+    messageId
+  };
+}
+
+function parseWhatsAppBookingMessage(message, transitions, fallbackDate) {
+  const normalized = normalizeRu(message);
+  const isCancellation = /\b(отмена|отменяю|снимаю|снять|форс)\b/.test(normalized);
+  const clauses = splitWhatsAppClauses(message);
+  const actions = [];
+  const ignored = [];
+  let lastTransition = "";
+
+  clauses.forEach((clause) => {
+    const clauseNormalized = normalizeRu(clause);
+    const clauseIsCancel = /\b(отмена|отменяю|снимаю|снять|форс)\b/.test(clauseNormalized);
+    const transition = resolveTransitionFromText(clause, transitions) || lastTransition;
+    const times = extractTimes(clause);
+
+    if (!transition) {
+      ignored.push({ clause, reason: "no_transition" });
+      return;
+    }
+
+    lastTransition = transition;
+
+    if (clauseIsCancel) {
+      actions.push({
+        type: "cancel",
+        transition,
+        date: fallbackDate,
+        startTime: times.length ? times[0].time : ""
+      });
+      return;
+    }
+
+    if (!times.length) {
+      ignored.push({ clause, reason: "no_time" });
+      return;
+    }
+
+    buildTimeRanges(times).forEach((range) => {
+      actions.push({
+        type: "book",
+        transition,
+        date: fallbackDate,
+        startTime: range.startTime,
+        endTime: range.endTime
+      });
+    });
+  });
+
+  if (isCancellation && !actions.some((action) => action.type === "cancel")) {
+    const transition = resolveTransitionFromText(message, transitions);
+    actions.push({ type: "cancel", transition, date: fallbackDate, startTime: "" });
+  }
+
+  return { actions, ignored };
+}
+
+function splitWhatsAppClauses(message) {
+  return String(message)
+    .replace(/\s+и\s+на\s+/gi, "\nна ")
+    .replace(/\s+и\s+в\s+/gi, "\nв ")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function resolveTransitionFromText(text, transitions) {
+  const normalized = normalizeRu(text);
+  const aliases = Object.keys(WHATSAPP_TRANSITION_ALIASES)
+    .sort((first, second) => second.length - first.length);
+
+  for (let index = 0; index < aliases.length; index += 1) {
+    const alias = aliases[index];
+    if (!containsWordPhrase(normalized, alias)) continue;
+    const target = WHATSAPP_TRANSITION_ALIASES[alias];
+    const exact = transitions.find((transition) => transition === target);
+    if (exact) return exact;
+    const byNormalized = transitions.find((transition) => normalizeRu(transition).includes(normalizeRu(target)));
+    if (byNormalized) return byNormalized;
+  }
+
+  return transitions.find((transition) => {
+    const label = normalizeRu(transition)
+      .replace(/\bост\b/g, "")
+      .replace(/\bпереход\b/g, "")
+      .trim();
+    return label && normalized.includes(label);
+  }) || "";
+}
+
+function containsWordPhrase(text, phrase) {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(text);
+}
+
+function extractTimes(text) {
+  const result = [];
+  const normalized = String(text).replace(/(\d{1,2})\s*до\s*(\d{1,2})/gi, "$1:00 до $2:00");
+  const regexp = /(^|[^\d])(\d{1,2})(?:\s*[:.]\s*(\d{2}))?(?=\s*(?:до|-|—|$|[^\d]))/g;
+  let match;
+
+  while ((match = regexp.exec(normalized))) {
+    const hour = Number(match[2]);
+    const minute = match[3] === undefined ? 0 : Number(match[3]);
+    if (hour > 24 || minute > 59) continue;
+    if (match[3] === undefined && !isBareHourTime(normalized, match.index + match[1].length)) continue;
+    result.push({
+      index: match.index,
+      endIndex: match.index + match[0].length,
+      time: normalizeBookingTime(hour, minute),
+      text: normalized
+    });
+  }
+
+  return result;
+}
+
+function isBareHourTime(text, index) {
+  const before = text.slice(Math.max(0, index - 4), index).toLowerCase();
+  return /(^|\s)(в|с|c)\s*$/.test(before);
+}
+
+function normalizeBookingTime(hour, minute) {
+  const normalizedHour = hour > 0 && hour < 6 ? hour + 12 : hour;
+  return roundToHalfHour(normalizedHour, minute);
+}
+
+function buildTimeRanges(times) {
+  const ranges = [];
+  for (let index = 0; index < times.length; index += 1) {
+    const current = times[index];
+    const next = times[index + 1];
+    const hasExplicitEnd = Boolean(next && isExplicitRange(current, next));
+    const startMinutes = timeToMinutesValue(current.time);
+    const endMinutes = hasExplicitEnd && timeToMinutesValue(next.time) > startMinutes
+      ? timeToMinutesValue(next.time)
+      : startMinutes + 120;
+    ranges.push({
+      startTime: current.time,
+      endTime: minutesToTimeValue(Math.min(24 * 60, endMinutes))
+    });
+    if (hasExplicitEnd) index += 1;
+  }
+  return ranges;
+}
+
+function isExplicitRange(current, next) {
+  const raw = String(current.text || "");
+  const from = current.endIndex != null ? current.endIndex : current.index;
+  const gap = raw.slice(from, next.index).toLowerCase();
+  if (/\bдо\b|[-—]/.test(gap)) return true;
+  const atNext = raw.charAt(next.index);
+  if (atNext === "-" || atNext === "—") return true;
+  return false;
+}
+
+function hasBookingConflictInList(bookings, transition, date, startTime, endTime) {
+  const start = timeToMinutesValue(startTime);
+  const end = timeToMinutesValue(endTime);
+  return bookings.some((booking) => {
+    if (booking.transition !== transition || booking.date !== date) return false;
+    return timeToMinutesValue(booking.startTime) < end && timeToMinutesValue(booking.endTime) > start;
+  });
+}
+
+function findOrCreateWhatsAppUser(users, phoneLast4) {
+  const existing = users.find((user) => String(user.phoneLast4 || "") === phoneLast4 || normalizeRu(user.alias || "") === `wa ${phoneLast4}`);
+  if (existing) return existing;
+
+  const user = {
+    id: makeId("user"),
+    name: `WhatsApp ${phoneLast4}`,
+    alias: `WA ${phoneLast4}`,
+    passwordHash: "",
+    avatar: "owl",
+    createdAt: new Date().toISOString(),
+    bio: "Автоматически создан из WhatsApp-чата",
+    music: "",
+    phoneLast4
+  };
+  users.push(user);
+  return user;
+}
+
+function normalizeWhatsappDate(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+  if (match) return `${match[3]}-${pad2(Number(match[2]))}-${pad2(Number(match[1]))}`;
+  const iso = normalizeDateValue(text);
+  if (iso) return iso;
+  return Utilities.formatDate(new Date(), "Asia/Yekaterinburg", "yyyy-MM-dd");
+}
+
+function getPhoneLast4(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length >= 4 ? digits.slice(-4) : "";
+}
+
+function makeWhatsAppMessageId(payload) {
+  return Utilities.base64EncodeWebSafe([
+    payload.phone || "",
+    payload.chatDate || "",
+    payload.chatTime || "",
+    payload.message || ""
+  ].join("|")).slice(0, 120);
+}
+
+function makeId(prefix) {
+  return `${prefix}_${Utilities.getUuid()}`;
+}
+
+function normalizeRu(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[«»"']/g, "")
+    .replace(/[^\p{L}\p{N}:.\s-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function timeToMinutesValue(time) {
+  const parts = String(time || "00:00").split(":").map(Number);
+  return (parts[0] || 0) * 60 + (parts[1] || 0);
+}
+
+function minutesToTimeValue(minutes) {
+  const clamped = Math.min(24 * 60, Math.max(0, minutes));
+  return `${pad2(Math.floor(clamped / 60))}:${pad2(clamped % 60)}`;
+}

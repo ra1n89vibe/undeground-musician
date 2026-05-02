@@ -1,0 +1,2432 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StreetMusic Ufa - бронирование переходов</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d0f18;
+      --panel: #161a27;
+      --panel-2: #1e2434;
+      --muted: #9ba5bd;
+      --text: #f4f7fb;
+      --accent: #8b5cf6;
+      --accent-2: #22d3ee;
+      --green: #22c55e;
+      --yellow: #facc15;
+      --red: #ef4444;
+      --slot: #2b3142;
+      --slot-border: #3a4258;
+      --line: rgba(239, 68, 68, 0.9);
+      --left-col: 230px;
+      --slot-width: 44px;
+      --row-height: 44px;
+      --time-height: 42px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(139, 92, 246, 0.24), transparent 32rem),
+        radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28rem),
+        linear-gradient(135deg, #090b12 0%, var(--bg) 55%, #111827 100%);
+      color: var(--text);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .app {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      padding: 22px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .title-block {
+      padding: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 26px;
+      background: rgba(22, 26, 39, 0.78);
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(12px);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 52px);
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+
+    .subtitle {
+      max-width: 760px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    .session-card {
+      min-width: 300px;
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      background: rgba(22, 26, 39, 0.86);
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.3);
+    }
+
+    .session-user {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .avatar {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      border-radius: 16px;
+      font-size: 28px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .user-name {
+      font-weight: 800;
+    }
+
+    .user-alias {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      background: rgba(22, 26, 39, 0.72);
+    }
+
+    .toolbar .btn {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+      transition: transform 0.08s ease, filter 0.12s ease, border-color 0.12s ease;
+    }
+
+    .toolbar .btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.12);
+      border-color: rgba(34, 211, 238, 0.5);
+    }
+
+    .toolbar .btn.ghost {
+      background: linear-gradient(135deg, #252c3e, #171c2b);
+    }
+
+    .toolbar-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toolbar-spacer {
+      flex: 1 1 auto;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .field-hint {
+      text-transform: none;
+      font-weight: 500;
+      letter-spacing: 0;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+      max-width: 36rem;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: #101523;
+      color: var(--text);
+      outline: none;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: rgba(34, 211, 238, 0.65);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    .btn {
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      color: white;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      box-shadow: 0 12px 26px rgba(79, 70, 229, 0.25);
+    }
+
+    .btn.secondary {
+      background: #252c3e;
+      box-shadow: none;
+    }
+
+    .btn.ghost {
+      color: var(--text);
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: none;
+    }
+
+    .btn.danger {
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      box-shadow: 0 12px 26px rgba(239, 68, 68, 0.18);
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .stat {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      min-height: 42px;
+      padding: 8px 12px;
+      border-radius: 14px;
+      background: rgba(34, 211, 238, 0.12);
+      color: #cffafe;
+      font-weight: 800;
+    }
+
+    .stat.clickable {
+      cursor: pointer;
+    }
+
+    .status {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 14px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 13px;
+    }
+
+    .warning {
+      display: none;
+      margin-bottom: 14px;
+      padding: 14px;
+      border: 1px solid rgba(250, 204, 21, 0.45);
+      border-radius: 18px;
+      background: rgba(250, 204, 21, 0.12);
+      color: #fef3c7;
+      line-height: 1.45;
+    }
+
+    .warning.visible {
+      display: block;
+    }
+
+    .booking-panel {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 16px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      background: rgba(22, 26, 39, 0.82);
+    }
+
+    .selection-text {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .selection-text strong {
+      color: var(--text);
+    }
+
+    .calendar-shell {
+      position: relative;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      background: rgba(14, 18, 29, 0.92);
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.32);
+      max-height: calc(100vh - 300px);
+      min-height: 430px;
+    }
+
+    .mobile-hint {
+      display: none;
+      margin: -2px 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .info-note {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      border-radius: 16px;
+      background: rgba(34, 211, 238, 0.08);
+      color: #cffafe;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .rules-note {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .rules-note h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+
+    .rules-note ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .calendar {
+      position: relative;
+      display: grid;
+      grid-template-columns: var(--left-col) repeat(36, var(--slot-width));
+      min-width: calc(var(--left-col) + 36 * var(--slot-width));
+    }
+
+    .corner,
+    .time-header,
+    .transition-name,
+    .slot {
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .corner {
+      position: sticky;
+      left: 0;
+      top: 0;
+      z-index: 7;
+      display: flex;
+      align-items: center;
+      height: var(--time-height);
+      padding: 0 14px;
+      background: #151a28;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .time-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      height: var(--time-height);
+      padding-top: 7px;
+      background: #151a28;
+      color: #9fb3d9;
+      font-size: 10px;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .time-header.hour {
+      color: #dbeafe;
+      font-weight: 900;
+    }
+
+    .transition-name {
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      min-height: var(--row-height);
+      padding: 8px 14px;
+      background: linear-gradient(90deg, #151a28 0%, #151a28 88%, rgba(21, 26, 40, 0.88) 100%);
+      color: #e5e7eb;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .slot {
+      position: relative;
+      height: var(--row-height);
+      background: var(--slot);
+      transition: transform 0.08s ease, filter 0.08s ease, background 0.08s ease;
+    }
+
+    .slot::after {
+      content: "";
+      position: absolute;
+      inset: 5px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.025);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    .slot:hover {
+      z-index: 2;
+      transform: scale(1.03);
+      filter: brightness(1.18);
+    }
+
+    .slot.selected {
+      background: rgba(34, 197, 94, 0.9);
+    }
+
+    .slot.booked {
+      color: #08111f;
+      font-weight: 900;
+    }
+
+    .slot.booked::after {
+      inset: 4px;
+      background: linear-gradient(135deg, var(--booking-color), rgba(255, 255, 255, 0.22));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), 0 8px 18px rgba(0, 0, 0, 0.2);
+    }
+
+    .slot.booked .slot-avatar {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      pointer-events: none;
+    }
+
+    .slot-dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 2;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--booking-color);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.42), 0 0 8px rgba(255, 255, 255, 0.12);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .zoom-fit .corner {
+      padding: 0 7px;
+      font-size: 8px;
+      letter-spacing: 0.04em;
+    }
+
+    .zoom-fit .time-header {
+      padding-top: 4px;
+      font-size: 7px;
+      white-space: nowrap;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      transform: rotate(180deg);
+    }
+
+    .zoom-fit .transition-name {
+      padding: 5px 7px;
+      font-size: 9px;
+      line-height: 1.1;
+      white-space: pre-line;
+    }
+
+    @media (max-width: 560px) {
+      .zoom-fit .transition-name {
+        min-height: 26px;
+        padding: 3px 6px;
+        font-size: 8px;
+      }
+
+      .zoom-fit .slot {
+        height: 26px;
+      }
+    }
+
+    .zoom-fit .slot::after {
+      inset: 3px;
+      border-radius: 7px;
+    }
+
+    .zoom-fit .slot.booked::after {
+      inset: 7px;
+      border-radius: 999px;
+      background: var(--booking-color);
+      box-shadow: none;
+    }
+
+    .zoom-fit .slot.booked.mine::before {
+      inset: 5px;
+      border-width: 1px;
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.9);
+    }
+
+    .slot.booked.mine::before {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      z-index: 2;
+      border-radius: 12px;
+      border: 3px solid #f8fafc;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.9), 0 0 18px rgba(59, 130, 246, 0.55);
+      pointer-events: none;
+    }
+
+    .now-line {
+      position: absolute;
+      top: var(--time-height);
+      bottom: 0;
+      width: 3px;
+      z-index: 6;
+      background: var(--line);
+      box-shadow: 0 0 18px rgba(239, 68, 68, 0.75);
+      pointer-events: none;
+    }
+
+    .now-line::before {
+      content: "сейчас";
+      position: absolute;
+      top: -24px;
+      left: -22px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: var(--red);
+      color: white;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(3, 7, 18, 0.72);
+      backdrop-filter: blur(10px);
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal {
+      width: min(520px, 100%);
+      max-height: min(720px, calc(100vh - 36px));
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 26px;
+      background: #151a28;
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 20px 20px 12px;
+    }
+
+    .modal-title {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+    }
+
+    .modal-body {
+      padding: 0 20px 20px;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .avatar-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+
+    .avatar-option {
+      min-height: 62px;
+      border: 2px solid transparent;
+      border-radius: 18px;
+      background: #202638;
+      font-size: 30px;
+    }
+
+    .avatar-option.selected {
+      border-color: var(--accent-2);
+      background: rgba(34, 211, 238, 0.16);
+    }
+
+    .booking-details {
+      display: grid;
+      gap: 12px;
+    }
+
+    .booking-owner {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding: 14px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .musicians-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .musicians-intro {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .musician-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 56px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: #202638;
+      color: var(--text);
+      text-align: left;
+    }
+
+    .musician-item .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      font-size: 20px;
+    }
+
+    .musician-item .user-alias {
+      font-size: 12px;
+    }
+
+    .empty-state {
+      padding: 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 70;
+      max-width: min(440px, calc(100vw - 36px));
+      display: none;
+      padding: 13px 15px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      background: #111827;
+      color: var(--text);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+    }
+
+    .toast.visible {
+      display: block;
+    }
+
+    @media (max-width: 900px) {
+      :root {
+        --left-col: 170px;
+        --slot-width: 42px;
+      }
+
+      .app {
+        padding: 14px;
+      }
+
+      .hero,
+      .booking-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .session-card {
+        min-width: 0;
+      }
+
+      .calendar-shell {
+        max-height: calc(100vh - 360px);
+      }
+
+      .transition-name {
+        font-size: 12px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      :root {
+        --left-col: 104px;
+        --slot-width: 48px;
+        --row-height: 52px;
+        --time-height: 44px;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at top, rgba(139, 92, 246, 0.24), transparent 24rem),
+          #0b0f19;
+      }
+
+      .app {
+        padding: 10px;
+      }
+
+      .hero {
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .title-block,
+      .session-card,
+      .toolbar,
+      .booking-panel {
+        border-radius: 18px;
+        padding: 12px;
+      }
+
+      h1 {
+        font-size: 30px;
+      }
+
+      .subtitle {
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .session-user {
+        margin-bottom: 10px;
+      }
+
+      input,
+      select,
+      .btn {
+        min-height: 48px;
+      }
+
+      .toolbar {
+        align-items: stretch;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .toolbar-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .session-card .toolbar-group,
+      .booking-panel .toolbar-group {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar .btn,
+      .toolbar .field,
+      .stat {
+        width: 100%;
+      }
+
+      .toolbar-spacer {
+        display: none;
+      }
+
+      .stat {
+        justify-content: center;
+      }
+
+      .booking-panel {
+        position: static;
+        margin-bottom: 10px;
+        box-shadow: none;
+        border: none;
+        background: transparent;
+        padding: 0;
+      }
+
+      .selection-text {
+        display: none;
+      }
+
+      .booking-panel .field,
+      .booking-panel #clearSelectionBtn {
+        display: none;
+      }
+
+      .booking-panel .toolbar-group {
+        width: 100%;
+      }
+
+      .booking-panel #confirmBookingBtn {
+        width: 100%;
+      }
+
+      .mobile-hint {
+        display: block;
+      }
+
+      .calendar-shell {
+        min-height: 420px;
+        max-height: 58vh;
+        border-radius: 18px;
+      }
+
+      .corner {
+        padding: 0 10px;
+        font-size: 10px;
+      }
+
+      .transition-name {
+        padding: 7px 10px;
+        font-size: 11px;
+      }
+
+      .slot.booked .slot-avatar {
+        font-size: 20px;
+      }
+
+      .avatar-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .modal-backdrop {
+        align-items: flex-end;
+        padding: 0;
+      }
+
+      .modal {
+        width: 100%;
+        max-height: 88vh;
+        border-radius: 24px 24px 0 0;
+      }
+
+      .toast {
+        right: 10px;
+        bottom: 10px;
+        max-width: calc(100vw - 20px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="hero">
+      <div class="title-block">
+        <h1>StreetMusic Ufa</h1>
+        <p class="subtitle">
+          Бронируйте время для выступлений в подземных переходах Уфы. Выберите свободные слоты подряд,
+          подтвердите бронь и смотрите актуальное расписание на день.
+        </p>
+      </div>
+
+      <aside class="session-card">
+        <div id="sessionUser" class="session-user">
+          <div class="avatar">🎸</div>
+          <div>
+            <div class="user-name">Гость</div>
+            <div class="user-alias">Войдите, чтобы бронировать</div>
+          </div>
+        </div>
+        <div class="toolbar-group">
+          <button class="btn" id="openLoginBtn">Войти</button>
+          <button class="btn secondary" id="openRegisterBtn">Регистрация</button>
+          <button class="btn secondary" id="editProfileBtn" hidden>Редактировать профиль</button>
+          <button class="btn ghost" id="logoutBtn" hidden>Выйти</button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="toolbar" aria-label="Панель управления">
+      <label class="field">
+        Дата
+        <input id="dateInput" type="date">
+      </label>
+      <div class="toolbar-group">
+        <button class="btn secondary" id="todayBtn">Сегодня</button>
+        <button class="btn ghost" id="refreshBtn">Обновить данные</button>
+        <button class="btn ghost" id="scrollNowBtn" title="Прокрутить расписание к текущему времени (для сегодняшней даты)">К текущему времени</button>
+        <button class="btn ghost" id="zoomBtn" title="Масштаб таблицы: весь день / средний / текущий">Масштаб: текущий</button>
+        <button class="btn ghost" id="musiciansBtn">Музыканты</button>
+      </div>
+      <div class="toolbar-spacer"></div>
+      <div class="stat clickable" id="playingNow" title="Показать, кто сейчас играет и где">🎵 Сейчас играют: 0</div>
+    </section>
+
+    <div class="warning" id="ruleWarning">
+      ⚠️ Внимание! Правилами разрешено бронировать не более 2 часов для одного человека и не более 4 часов для двух человек.
+    </div>
+
+    <section class="booking-panel" aria-label="Выбранная бронь">
+      <div class="selection-text" id="selectionText">
+        Выберите свободные 30-минутные слоты в одном переходе. Повторный клик по занятому слоту покажет информацию о брони.
+      </div>
+      <div class="toolbar-group">
+        <label class="field">
+          Участников
+          <select id="peopleCount">
+            <option value="1">1 человек</option>
+            <option value="2">2 человека</option>
+          </select>
+        </label>
+        <button class="btn secondary" id="clearSelectionBtn">Сбросить</button>
+        <button class="btn" id="confirmBookingBtn" disabled>Забронировать</button>
+      </div>
+    </section>
+
+    <div class="mobile-hint">Свайпайте расписание влево-вправо, чтобы увидеть весь день с 06:00 до 24:00.</div>
+
+    <section class="calendar-shell" id="calendarShell" aria-label="Календарь переходов">
+      <div class="calendar" id="calendar"></div>
+    </section>
+
+    <section class="info-note" aria-label="Информационное сообщение">
+      Этот сайт является вспомогательным инструментом для бронирования. Основная координация выступлений ведется в WhatsApp-чате.
+    </section>
+
+    <section class="rules-note" aria-label="Правила поведения в подземном переходе">
+      <h3>Правила поведения в подземном переходе</h3>
+      <ul>
+        <li>Выглядеть опрятно, чисто и ухоженно.</li>
+        <li>Не находиться в состоянии алкогольного опьянения.</li>
+        <li>Прибирать за собой после выступления.</li>
+        <li>Быть миролюбивым и уважительным к окружающим.</li>
+      </ul>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="loginModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="loginTitle">Вход</h2>
+        <button class="btn ghost" data-close-modal>Закрыть</button>
+      </div>
+      <form class="modal-body form-grid" id="loginForm">
+        <label class="field">
+          Имя
+          <input name="name" autocomplete="username" required>
+        </label>
+        <label class="field">
+          Пароль
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn" type="submit">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="registerModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="registerTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="registerTitle">Регистрация</h2>
+        <button class="btn ghost" data-close-modal>Закрыть</button>
+      </div>
+      <form class="modal-body form-grid" id="registerForm">
+        <label class="field">
+          Имя
+          <input name="name" autocomplete="name" required>
+        </label>
+        <label class="field">
+          Творческий псевдоним
+          <input name="alias" required>
+        </label>
+        <label class="field">
+          Пароль
+          <input name="password" type="password" autocomplete="new-password" required>
+        </label>
+        <label class="field">
+          Последние 4 цифры телефона (необязательно)
+          <input name="phoneLast4" type="text" inputmode="numeric" maxlength="32" placeholder="Например: 3696" autocomplete="tel-national">
+          <span class="field-hint">Нужны для автосопоставления с WhatsApp: бронь из чата привяжется к вашему профилю, если цифры совпадут.</span>
+        </label>
+        <label class="field">
+          О себе
+          <textarea name="bio" placeholder="Коротко о себе как о музыканте"></textarea>
+        </label>
+        <label class="field">
+          Какую музыку поёте и играете
+          <textarea name="music" placeholder="Например: рок, блюз, авторские песни, каверы"></textarea>
+        </label>
+        <div class="field">
+          Аватарка
+          <div class="avatar-grid" id="avatarGrid"></div>
+        </div>
+        <button class="btn" type="submit">Создать профиль</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="editProfileModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editProfileTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="editProfileTitle">Редактировать профиль</h2>
+        <button class="btn ghost" data-close-modal>Закрыть</button>
+      </div>
+      <form class="modal-body form-grid" id="editProfileForm">
+        <label class="field">
+          Творческий псевдоним
+          <input name="alias" required>
+        </label>
+        <label class="field">
+          О себе
+          <textarea name="bio" placeholder="Коротко о себе как о музыканте"></textarea>
+        </label>
+        <label class="field">
+          Какую музыку поёте и играете
+          <textarea name="music" placeholder="Например: рок, блюз, авторские песни, каверы"></textarea>
+        </label>
+        <label class="field">
+          Последние 4 цифры телефона (необязательно)
+          <input name="phoneLast4" type="text" inputmode="numeric" maxlength="32" placeholder="Например: 3696" autocomplete="tel-national">
+          <span class="field-hint">Для сопоставления с WhatsApp. Можно оставить пустым или изменить позже.</span>
+        </label>
+        <button class="btn" type="submit">Сохранить изменения</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="bookingModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bookingTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="bookingTitle">Бронь</h2>
+        <button class="btn ghost" data-close-modal>Закрыть</button>
+      </div>
+      <div class="modal-body booking-details" id="bookingDetails"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="musiciansModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="musiciansTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="musiciansTitle">Музыканты</h2>
+        <button class="btn ghost" data-close-modal>Закрыть</button>
+      </div>
+      <div class="modal-body booking-details" id="musiciansDetails"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="warningModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="warningTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="warningTitle">Предупреждение</h2>
+        <button class="btn ghost" data-close-modal>Закрыть</button>
+      </div>
+      <div class="modal-body form-grid">
+        <div class="warning visible">
+          ⚠️ Внимание! Правилами разрешено бронировать не более 2 часов для одного человека и не более 4 часов для двух человек.
+        </div>
+        <button class="btn" id="warningContinueBtn">Понятно, продолжить бронирование</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    /*
+      StreetMusic Ufa SPA
+      ------------------------------------------------------------
+      Все приложение находится в одном HTML-файле: UI, стили, хранение,
+      регистрация, авторизация, бронирование и синхронизация.
+
+      GOOGLE SHEETS:
+      - В проект добавлен файл Code.gs для Google Apps Script.
+      - Создайте Web App: Execute as "Me", Who has access "Anyone".
+      - Вставьте URL деплоя в CONFIG.sheetsWebAppUrl ниже.
+      - Пока URL пустой или API недоступен, приложение сохраняет данные на устройстве.
+      - Лист Users: колонка «Телефон 4 цифры» (последний столбец) — для сопоставления с WhatsApp; старые строки можно заполнить вручную.
+    */
+
+    const CONFIG = {
+      spreadsheetId: "1g7xiuT1uECXvM-8uTITAy2J0sxbXQrWG2eEPgiZGv-k",
+      sheetsWebAppUrl: "https://script.google.com/macros/s/AKfycbzqBWxUthTdOt09gBxesmhghlBD927fm7glmh2xy5cERx5tz-fHTlQ5O4C1x0S77JHt/exec",
+      autoRefreshMs: 30000,
+      requestTimeoutMs: 8000,
+      storageKey: "streetmusic-ufa-v1",
+      sessionKey: "streetmusic-ufa-session",
+      sessionUserKey: "streetmusic-ufa-session-user",
+      dayStartHour: 6,
+      dayEndHour: 24,
+      slotMinutes: 30
+    };
+    const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+    const WARNING_TEXT = "⚠️ Внимание! Правилами разрешено бронировать не более 2 часов для одного человека и не более 4 часов для двух человек.";
+
+    const TRANSITIONS = [
+      "Монумент Дружбы",
+      "Большой ЦР",
+      "Малый ЦР",
+      "Аграрный",
+      "Спортивная",
+      "Семья",
+      "Юношеская библиотека",
+      "Горсовет",
+      "Бульвар Славы"
+    ];
+
+    const AVATARS = [
+      { id: "cat", emoji: "🐱🎸", label: "Котик", color: "#fb7185" },
+      { id: "dog", emoji: "🐶🎸", label: "Пёсик", color: "#f59e0b" },
+      { id: "rabbit", emoji: "🐰🎸", label: "Зайчик", color: "#a78bfa" },
+      { id: "bear", emoji: "🐻🎸", label: "Медведь", color: "#92400e" },
+      { id: "fox", emoji: "🦊🎸", label: "Лис", color: "#f97316" },
+      { id: "raccoon", emoji: "🦝🎸", label: "Енот", color: "#64748b" },
+      { id: "owl", emoji: "🦉🎸", label: "Сова", color: "#22d3ee" },
+      { id: "hamster", emoji: "🐹🎸", label: "Хомяк", color: "#fbbf24" },
+      { id: "panda", emoji: "🐼🎸", label: "Панда", color: "#e5e7eb" },
+      { id: "dragon", emoji: "🐲🎸", label: "Дракончик", color: "#34d399" }
+    ];
+
+    const ADJACENT_BOOKING_COLORS = [
+      "#22d3ee",
+      "#facc15",
+      "#34d399",
+      "#f472b6",
+      "#f97316",
+      "#a78bfa",
+      "#60a5fa",
+      "#fb7185"
+    ];
+
+    const state = {
+      users: [],
+      bookings: [],
+      transitions: [...TRANSITIONS],
+      currentUser: null,
+      selectedAvatarId: AVATARS[0].id,
+      selection: [],
+      pendingWarningBooking: null,
+      zoomMode: "default"
+    };
+
+    const els = {
+      calendar: document.getElementById("calendar"),
+      calendarShell: document.getElementById("calendarShell"),
+      dateInput: document.getElementById("dateInput"),
+      todayBtn: document.getElementById("todayBtn"),
+      refreshBtn: document.getElementById("refreshBtn"),
+      scrollNowBtn: document.getElementById("scrollNowBtn"),
+      zoomBtn: document.getElementById("zoomBtn"),
+      musiciansBtn: document.getElementById("musiciansBtn"),
+      playingNow: document.getElementById("playingNow"),
+      sessionUser: document.getElementById("sessionUser"),
+      openLoginBtn: document.getElementById("openLoginBtn"),
+      openRegisterBtn: document.getElementById("openRegisterBtn"),
+      editProfileBtn: document.getElementById("editProfileBtn"),
+      logoutBtn: document.getElementById("logoutBtn"),
+      loginModal: document.getElementById("loginModal"),
+      registerModal: document.getElementById("registerModal"),
+      editProfileModal: document.getElementById("editProfileModal"),
+      bookingModal: document.getElementById("bookingModal"),
+      musiciansModal: document.getElementById("musiciansModal"),
+      warningModal: document.getElementById("warningModal"),
+      loginForm: document.getElementById("loginForm"),
+      registerForm: document.getElementById("registerForm"),
+      editProfileForm: document.getElementById("editProfileForm"),
+      avatarGrid: document.getElementById("avatarGrid"),
+      bookingDetails: document.getElementById("bookingDetails"),
+      musiciansDetails: document.getElementById("musiciansDetails"),
+      ruleWarning: document.getElementById("ruleWarning"),
+      selectionText: document.getElementById("selectionText"),
+      peopleCount: document.getElementById("peopleCount"),
+      clearSelectionBtn: document.getElementById("clearSelectionBtn"),
+      confirmBookingBtn: document.getElementById("confirmBookingBtn"),
+      warningContinueBtn: document.getElementById("warningContinueBtn"),
+      toast: document.getElementById("toast")
+    };
+
+    function getSlotCount() {
+      return ((CONFIG.dayEndHour - CONFIG.dayStartHour) * 60) / CONFIG.slotMinutes;
+    }
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function getUfaNowParts() {
+      const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Yekaterinburg",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+      const valueByType = {};
+      formatter.formatToParts(new Date()).forEach((part) => {
+        valueByType[part.type] = part.value;
+      });
+      return {
+        isoDate: `${valueByType.year}-${valueByType.month}-${valueByType.day}`,
+        hour: Number(valueByType.hour),
+        minute: Number(valueByType.minute)
+      };
+    }
+
+    function todayIso() {
+      return getUfaNowParts().isoDate;
+    }
+
+    function enforceTodayDate() {
+      const currentUfaDate = todayIso();
+      els.dateInput.min = currentUfaDate;
+      els.dateInput.max = currentUfaDate;
+      if (els.dateInput.value !== currentUfaDate) {
+        els.dateInput.value = currentUfaDate;
+      }
+    }
+
+    function cssPixels(variableName) {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(variableName);
+      return Number.parseFloat(raw) || 0;
+    }
+
+    function minutesToTime(minutes) {
+      const hour = Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      return `${pad(hour)}:${pad(minute)}`;
+    }
+
+    function timeToMinutes(time) {
+      const [hour, minute] = time.split(":").map(Number);
+      return hour * 60 + minute;
+    }
+
+    function slotToTime(slotIndex) {
+      return minutesToTime(CONFIG.dayStartHour * 60 + slotIndex * CONFIG.slotMinutes);
+    }
+
+    function slotEndTime(slotIndex) {
+      return minutesToTime(CONFIG.dayStartHour * 60 + (slotIndex + 1) * CONFIG.slotMinutes);
+    }
+
+    function selectionRange(selection = state.selection) {
+      if (!selection.length) return null;
+      const sorted = [...selection].sort((a, b) => a.slotIndex - b.slotIndex);
+      return {
+        transition: sorted[0].transition,
+        startSlot: sorted[0].slotIndex,
+        endSlot: sorted[sorted.length - 1].slotIndex,
+        startTime: slotToTime(sorted[0].slotIndex),
+        endTime: slotEndTime(sorted[sorted.length - 1].slotIndex),
+        durationMinutes: sorted.length * CONFIG.slotMinutes
+      };
+    }
+
+    function formatDuration(minutes) {
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      if (hours && rest) return `${hours} ч ${rest} мин`;
+      if (hours) return `${hours} ч`;
+      return `${rest} мин`;
+    }
+
+    function avatarById(id) {
+      return AVATARS.find((avatar) => avatar.id === id) || AVATARS[0];
+    }
+
+    function generateId(prefix) {
+      if (window.crypto && crypto.randomUUID) return `${prefix}_${crypto.randomUUID()}`;
+      return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+
+    function demoHash(value) {
+      // Fallback нужен только для локального демо, если Web Crypto недоступен при открытии HTML-файла.
+      let hash = 2166136261;
+      for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `demo_${(hash >>> 0).toString(16)}`;
+    }
+
+    async function hashPassword(password) {
+      if (!window.crypto || !crypto.subtle || !window.TextEncoder) {
+        return demoHash(password);
+      }
+
+      const encoded = new TextEncoder().encode(password);
+      const digest = await crypto.subtle.digest("SHA-256", encoded);
+      return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    /** Пустая строка или ровно 4 последние цифры (из ввода можно вставить целый номер). Некорректный неполный ввод — null. */
+    function normalizePhoneLast4Input(raw) {
+      const trimmed = String(raw || "").trim();
+      if (!trimmed) return "";
+      const digits = trimmed.replace(/\D/g, "");
+      if (!digits.length) return "";
+      if (digits.length < 4) return null;
+      return digits.slice(-4);
+    }
+
+    function showToast(message) {
+      els.toast.textContent = message;
+      els.toast.classList.add("visible");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => els.toast.classList.remove("visible"), 3600);
+    }
+
+    function setCookie(name, value, maxAgeSeconds) {
+      document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; samesite=lax`;
+    }
+
+    function getCookie(name) {
+      const target = `${encodeURIComponent(name)}=`;
+      const found = document.cookie.split("; ").find((item) => item.startsWith(target));
+      if (!found) return "";
+      return decodeURIComponent(found.slice(target.length));
+    }
+
+    function deleteCookie(name) {
+      document.cookie = `${encodeURIComponent(name)}=; path=/; max-age=0; samesite=lax`;
+    }
+
+    function openModal(modal) {
+      modal.classList.add("open");
+    }
+
+    function closeModal(modal) {
+      if (modal === els.warningModal) {
+        state.pendingWarningBooking = null;
+      }
+      modal.classList.remove("open");
+    }
+
+    function closeAllModals() {
+      document.querySelectorAll(".modal-backdrop.open").forEach(closeModal);
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function transitionLabel(value) {
+      return String(value).replace(/^ост\.\s*/i, "").trim();
+    }
+
+    function transitionCompactLabel(value) {
+      const label = transitionLabel(value);
+      const compact = {
+        "Монумент Дружбы": "Мон.\nДруж.",
+        "Большой ЦР": "Бол. ЦР",
+        "Малый ЦР": "Мал. ЦР",
+        "Аграрный": "Аграр.",
+        "Спортивная": "Спорт.",
+        "Семья": "Семья",
+        "Юношеская библиотека": "Юн. Библ.",
+        "Горсовет": "Горс.",
+        "Бульвар Славы": "Бульв.\nСлавы"
+      };
+      return compact[label] || label;
+    }
+
+    function zoomConfigByViewport() {
+      const mobile = window.matchMedia("(max-width: 560px)").matches;
+      const tablet = window.matchMedia("(max-width: 900px)").matches;
+      if (mobile) {
+        return {
+          fit: { leftCol: 72, slotWidth: 11, label: "весь день" },
+          medium: { leftCol: 96, slotWidth: 38, label: "средний" },
+          default: { leftCol: 104, slotWidth: 48, label: "текущий" }
+        };
+      }
+      if (tablet) {
+        return {
+          fit: { leftCol: 118, slotWidth: 24, label: "весь день" },
+          medium: { leftCol: 155, slotWidth: 36, label: "средний" },
+          default: { leftCol: 170, slotWidth: 42, label: "текущий" }
+        };
+      }
+      return {
+        fit: { leftCol: 150, slotWidth: 24, label: "весь день" },
+        medium: { leftCol: 205, slotWidth: 36, label: "средний" },
+        default: { leftCol: 230, slotWidth: 44, label: "текущий" }
+      };
+    }
+
+    function applyZoomMode() {
+      const preset = zoomConfigByViewport()[state.zoomMode] || zoomConfigByViewport().default;
+      document.documentElement.style.setProperty("--left-col", `${preset.leftCol}px`);
+      document.documentElement.style.setProperty("--slot-width", `${preset.slotWidth}px`);
+      document.documentElement.style.setProperty(
+        "--time-height",
+        window.matchMedia("(max-width: 560px)").matches ? "44px" : "42px"
+      );
+      document.documentElement.classList.toggle("zoom-fit", state.zoomMode === "fit");
+      els.zoomBtn.textContent = `Масштаб: ${preset.label}`;
+    }
+
+    function toggleZoomMode() {
+      const order = ["fit", "medium", "default"];
+      const currentIndex = order.indexOf(state.zoomMode);
+      state.zoomMode = order[(currentIndex + 1) % order.length];
+      applyZoomMode();
+      renderCalendar();
+    }
+
+    const LocalStore = {
+      read() {
+        const raw = localStorage.getItem(CONFIG.storageKey);
+        if (!raw) {
+          return { users: [], bookings: [], transitions: [...TRANSITIONS] };
+        }
+
+        try {
+          const parsed = JSON.parse(raw);
+          return {
+            users: Array.isArray(parsed.users) ? parsed.users : [],
+            bookings: Array.isArray(parsed.bookings) ? parsed.bookings : [],
+            transitions: Array.isArray(parsed.transitions) && parsed.transitions.length ? parsed.transitions : [...TRANSITIONS]
+          };
+        } catch {
+          return { users: [], bookings: [], transitions: [...TRANSITIONS] };
+        }
+      },
+      write(payload) {
+        localStorage.setItem(CONFIG.storageKey, JSON.stringify(payload));
+      }
+    };
+
+    function hydrateFromLocalStore() {
+      const local = LocalStore.read();
+      state.users = local.users;
+      state.bookings = local.bookings;
+      state.transitions = local.transitions;
+    }
+
+    function withTimeout(promise, timeoutMs, message) {
+      let timeoutId;
+      const timeout = new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      });
+      return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+    }
+
+    const SheetsStore = {
+      isConfigured() {
+        return Boolean(CONFIG.sheetsWebAppUrl.trim());
+      },
+      async request(payload) {
+        const separator = CONFIG.sheetsWebAppUrl.includes("?") ? "&" : "?";
+        const response = await withTimeout(
+          fetch(`${CONFIG.sheetsWebAppUrl}${separator}_=${Date.now()}`, {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ spreadsheetId: CONFIG.spreadsheetId, ...payload })
+          }),
+          CONFIG.requestTimeoutMs,
+          "Google Sheets не ответил вовремя"
+        );
+
+        if (!response.ok) {
+          throw new Error(`Google Sheets proxy вернул ${response.status}`);
+        }
+
+        let data;
+        try {
+          data = await response.json();
+        } catch (error) {
+          throw new Error("Google Sheets вернул не JSON. Проверьте деплой Apps Script и доступ Anyone.");
+        }
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        return data;
+      },
+      read() {
+        return this.request({ action: "read" });
+      },
+      write(payload) {
+        return this.request({ action: "write", ...payload });
+      }
+    };
+
+    async function loadData({ silent = false } = {}) {
+      if (SheetsStore.isConfigured()) {
+        try {
+          const localBeforeRemote = LocalStore.read();
+          const remote = await SheetsStore.read();
+          state.users = Array.isArray(remote.users) ? remote.users : [];
+          state.bookings = Array.isArray(remote.bookings) ? remote.bookings : [];
+          state.transitions = Array.isArray(remote.transitions) && remote.transitions.length ? remote.transitions : [...TRANSITIONS];
+
+          const pendingLocalBookings = (Array.isArray(localBeforeRemote.bookings) ? localBeforeRemote.bookings : [])
+            .filter((booking) => booking && booking._pendingLocal);
+          if (pendingLocalBookings.length) {
+            const knownIds = new Set(state.bookings.map((booking) => booking.id));
+            const missingPending = pendingLocalBookings.filter((booking) => !knownIds.has(booking.id));
+            if (missingPending.length) {
+              state.bookings = [...state.bookings, ...missingPending];
+              try {
+                await SheetsStore.write({
+                  users: state.users,
+                  bookings: state.bookings.map((booking) => {
+                    const clone = { ...booking };
+                    delete clone._pendingLocal;
+                    return clone;
+                  }),
+                  transitions: state.transitions
+                });
+                state.bookings = state.bookings.map((booking) => {
+                  if (!booking._pendingLocal) return booking;
+                  const clone = { ...booking };
+                  delete clone._pendingLocal;
+                  return clone;
+                });
+              } catch (syncError) {
+                // keep pending marks locally and retry on next refresh
+              }
+            }
+          }
+
+          LocalStore.write({ users: state.users, bookings: state.bookings, transitions: state.transitions });
+          if (!silent) showToast("Данные обновлены");
+          return;
+        } catch (error) {
+          console.warn(error);
+          if (!silent) showToast("Не удалось обновить данные онлайн");
+        }
+      }
+
+      hydrateFromLocalStore();
+    }
+
+    async function persistData({ silent = false } = {}) {
+      const payload = {
+        users: state.users,
+        bookings: state.bookings,
+        transitions: state.transitions
+      };
+
+      LocalStore.write(payload);
+
+      if (SheetsStore.isConfigured()) {
+        try {
+          await SheetsStore.write(payload);
+          if (!silent) showToast("Данные сохранены");
+          return { synced: true };
+        } catch (error) {
+          console.warn(error);
+          const details = error && error.message ? ` (${error.message})` : "";
+          if (!silent) showToast(`Данные сохранены на устройстве${details}`);
+          return { synced: false, error };
+        }
+      }
+
+      return { synced: false };
+    }
+
+    function restoreSession() {
+      const userId = localStorage.getItem(CONFIG.sessionKey) || getCookie(CONFIG.sessionKey);
+      const matchedUser = state.users.find((user) => user.id === userId) || null;
+      if (matchedUser) {
+        state.currentUser = matchedUser;
+        const sessionSnapshot = JSON.stringify({
+          id: matchedUser.id,
+          name: matchedUser.name,
+          alias: matchedUser.alias,
+          avatar: matchedUser.avatar,
+          bio: matchedUser.bio || "",
+          music: matchedUser.music || "",
+          phoneLast4: matchedUser.phoneLast4 || ""
+        });
+        localStorage.setItem(CONFIG.sessionKey, matchedUser.id);
+        localStorage.setItem(CONFIG.sessionUserKey, sessionSnapshot);
+        setCookie(CONFIG.sessionKey, matchedUser.id, SESSION_COOKIE_MAX_AGE);
+        setCookie(CONFIG.sessionUserKey, sessionSnapshot, SESSION_COOKIE_MAX_AGE);
+        return;
+      }
+
+      const fallbackRaw = localStorage.getItem(CONFIG.sessionUserKey) || getCookie(CONFIG.sessionUserKey);
+      if (fallbackRaw) {
+        try {
+          const fallbackUser = JSON.parse(fallbackRaw);
+          if (fallbackUser && fallbackUser.id && fallbackUser.name) {
+            state.currentUser = fallbackUser;
+            localStorage.setItem(CONFIG.sessionKey, fallbackUser.id);
+            localStorage.setItem(CONFIG.sessionUserKey, JSON.stringify(fallbackUser));
+            setCookie(CONFIG.sessionKey, fallbackUser.id, SESSION_COOKIE_MAX_AGE);
+            setCookie(CONFIG.sessionUserKey, JSON.stringify(fallbackUser), SESSION_COOKIE_MAX_AGE);
+            return;
+          }
+        } catch {
+          // ignore invalid fallback JSON
+        }
+      }
+
+      state.currentUser = null;
+      localStorage.removeItem(CONFIG.sessionKey);
+      localStorage.removeItem(CONFIG.sessionUserKey);
+      deleteCookie(CONFIG.sessionKey);
+      deleteCookie(CONFIG.sessionUserKey);
+    }
+
+    function saveSession(user) {
+      state.currentUser = user;
+      const sessionSnapshot = JSON.stringify({
+        id: user.id,
+        name: user.name,
+        alias: user.alias,
+        avatar: user.avatar,
+        bio: user.bio || "",
+        music: user.music || "",
+        phoneLast4: user.phoneLast4 || ""
+      });
+      localStorage.setItem(CONFIG.sessionKey, user.id);
+      localStorage.setItem(CONFIG.sessionUserKey, sessionSnapshot);
+      setCookie(CONFIG.sessionKey, user.id, SESSION_COOKIE_MAX_AGE);
+      setCookie(CONFIG.sessionUserKey, sessionSnapshot, SESSION_COOKIE_MAX_AGE);
+    }
+
+    function clearSession() {
+      state.currentUser = null;
+      localStorage.removeItem(CONFIG.sessionKey);
+      localStorage.removeItem(CONFIG.sessionUserKey);
+      deleteCookie(CONFIG.sessionKey);
+      deleteCookie(CONFIG.sessionUserKey);
+    }
+
+    function isSlotBooked(transition, date, slotIndex) {
+      const slotStart = timeToMinutes(slotToTime(slotIndex));
+      const slotEnd = timeToMinutes(slotEndTime(slotIndex));
+      return state.bookings.find((booking) => {
+        if (booking.transition !== transition || booking.date !== date) return false;
+        const bookingStart = timeToMinutes(booking.startTime);
+        const bookingEnd = timeToMinutes(booking.endTime);
+        return bookingStart < slotEnd && bookingEnd > slotStart;
+      });
+    }
+
+    function hasBookingConflict(transition, date, startSlot, endSlot) {
+      for (let slotIndex = startSlot; slotIndex <= endSlot; slotIndex += 1) {
+        if (isSlotBooked(transition, date, slotIndex)) return true;
+      }
+      return false;
+    }
+
+    function isSelected(transition, slotIndex) {
+      return state.selection.some((item) => item.transition === transition && item.slotIndex === slotIndex);
+    }
+
+    function bookingBaseColor(booking) {
+      return avatarById(booking.avatar).color;
+    }
+
+    function alternativeBookingColor(baseColor, variantIndex) {
+      if (variantIndex <= 0) return baseColor;
+      const normalizedBase = String(baseColor).toLowerCase();
+      const palette = ADJACENT_BOOKING_COLORS.filter((color) => color.toLowerCase() !== normalizedBase);
+      return palette[(variantIndex - 1) % palette.length] || baseColor;
+    }
+
+    function bookingSlotRange(booking) {
+      const start = Math.max(0, Math.floor((timeToMinutes(booking.startTime) - CONFIG.dayStartHour * 60) / CONFIG.slotMinutes));
+      const end = Math.max(start, Math.ceil((timeToMinutes(booking.endTime) - CONFIG.dayStartHour * 60) / CONFIG.slotMinutes) - 1);
+      return { start, end };
+    }
+
+    function bookingsTouchByTime(first, second) {
+      const firstRange = bookingSlotRange(first);
+      const secondRange = bookingSlotRange(second);
+      return firstRange.start <= secondRange.end + 1 && secondRange.start <= firstRange.end + 1;
+    }
+
+    function bookingCreatedTime(booking) {
+      const parsed = Date.parse(booking.createdAt || "");
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    function resolveBookingDisplayColor(booking) {
+      const baseColor = bookingBaseColor(booking);
+      const candidates = state.bookings.filter((item) => {
+        return item.date === booking.date &&
+          item.transition === booking.transition &&
+          bookingBaseColor(item).toLowerCase() === baseColor.toLowerCase();
+      });
+      const cluster = [booking];
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        candidates.forEach((candidate) => {
+          if (cluster.some((item) => item.id === candidate.id)) return;
+          if (cluster.some((item) => bookingsTouchByTime(item, candidate))) {
+            cluster.push(candidate);
+            changed = true;
+          }
+        });
+      }
+
+      const usersInOrder = [];
+      cluster
+        .slice()
+        .sort((first, second) => {
+          const byTime = bookingCreatedTime(first) - bookingCreatedTime(second);
+          if (byTime) return byTime;
+          return String(first.id).localeCompare(String(second.id), "ru");
+        })
+        .forEach((item) => {
+          if (!usersInOrder.includes(item.userId)) {
+            usersInOrder.push(item.userId);
+          }
+        });
+
+      return alternativeBookingColor(baseColor, usersInOrder.indexOf(booking.userId));
+    }
+
+    function updateSessionUi() {
+      if (state.currentUser) {
+        const avatar = avatarById(state.currentUser.avatar);
+        els.sessionUser.innerHTML = `
+          <div class="avatar" style="background:${avatar.color}22">${avatar.emoji}</div>
+          <div>
+            <div class="user-name">${escapeHtml(state.currentUser.name)}</div>
+            <div class="user-alias">${escapeHtml(state.currentUser.alias)}</div>
+          </div>
+        `;
+        els.openLoginBtn.hidden = true;
+        els.openRegisterBtn.hidden = true;
+        els.editProfileBtn.hidden = false;
+        els.logoutBtn.hidden = false;
+      } else {
+        els.sessionUser.innerHTML = `
+          <div class="avatar">🎸</div>
+          <div>
+            <div class="user-name">Гость</div>
+            <div class="user-alias">Войдите, чтобы бронировать</div>
+          </div>
+        `;
+        els.openLoginBtn.hidden = false;
+        els.openRegisterBtn.hidden = false;
+        els.editProfileBtn.hidden = true;
+        els.logoutBtn.hidden = true;
+      }
+    }
+
+    function renderAvatarGrid() {
+      els.avatarGrid.innerHTML = "";
+      AVATARS.forEach((avatar) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `avatar-option ${avatar.id === state.selectedAvatarId ? "selected" : ""}`;
+        button.title = avatar.label;
+        button.textContent = avatar.emoji;
+        button.addEventListener("click", () => {
+          state.selectedAvatarId = avatar.id;
+          renderAvatarGrid();
+        });
+        els.avatarGrid.appendChild(button);
+      });
+    }
+
+    function renderCalendar() {
+      const date = els.dateInput.value;
+      const slotCount = getSlotCount();
+      els.calendar.innerHTML = "";
+
+      const corner = document.createElement("div");
+      corner.className = "corner";
+      corner.textContent = "Переход / время";
+      els.calendar.appendChild(corner);
+
+      for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+        const time = slotToTime(slotIndex);
+        const header = document.createElement("div");
+        header.className = `time-header ${time.endsWith(":00") ? "hour" : ""}`;
+        header.textContent = time;
+        els.calendar.appendChild(header);
+      }
+
+      state.transitions.forEach((transition) => {
+        const name = document.createElement("div");
+        name.className = "transition-name";
+        name.textContent = state.zoomMode === "fit" ? transitionCompactLabel(transition) : transitionLabel(transition);
+        name.title = transitionLabel(transition);
+        els.calendar.appendChild(name);
+
+        for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+          const booking = isSlotBooked(transition, date, slotIndex);
+          const slot = document.createElement("button");
+          slot.type = "button";
+          slot.className = "slot";
+          slot.dataset.transition = transition;
+          slot.dataset.slotIndex = String(slotIndex);
+          slot.title = `${transition}: ${slotToTime(slotIndex)}-${slotEndTime(slotIndex)}`;
+
+          if (booking) {
+            const avatar = avatarById(booking.avatar);
+            const displayColor = resolveBookingDisplayColor(booking);
+            slot.classList.add("booked");
+            if (state.currentUser && booking.userId === state.currentUser.id) {
+              slot.classList.add("mine");
+            }
+            slot.style.setProperty("--booking-color", displayColor);
+            slot.innerHTML = state.zoomMode === "fit"
+              ? '<span class="slot-dot"></span>'
+              : `<span class="slot-avatar">${avatar.emoji}</span>`;
+            slot.title = `${booking.name} (${booking.alias}) ${booking.startTime}-${booking.endTime}`;
+          }
+
+          if (!booking && isSelected(transition, slotIndex)) {
+            slot.classList.add("selected");
+          }
+
+          slot.addEventListener("click", () => handleSlotClick(transition, slotIndex));
+          els.calendar.appendChild(slot);
+        }
+      });
+
+      renderNowLine();
+      updateSelectionUi();
+      updatePlayingNow();
+    }
+
+    function renderNowLine() {
+      document.querySelectorAll(".now-line").forEach((line) => line.remove());
+      if (els.dateInput.value !== todayIso()) return;
+
+      const ufaNow = getUfaNowParts();
+      const currentMinutes = ufaNow.hour * 60 + ufaNow.minute;
+      const startMinutes = CONFIG.dayStartHour * 60;
+      const endMinutes = CONFIG.dayEndHour * 60;
+
+      if (currentMinutes < startMinutes || currentMinutes > endMinutes) return;
+
+      const progress = (currentMinutes - startMinutes) / CONFIG.slotMinutes;
+      const leftColumnWidth = cssPixels("--left-col");
+      const slotWidth = cssPixels("--slot-width");
+      const line = document.createElement("div");
+      line.className = "now-line";
+      line.style.left = `${leftColumnWidth + progress * slotWidth}px`;
+      els.calendar.appendChild(line);
+    }
+
+    function updateSelectionUi() {
+      const range = selectionRange();
+      const people = Number(els.peopleCount.value);
+      const shouldWarn = range && ((people === 1 && range.durationMinutes > 120) || (people === 2 && range.durationMinutes > 240));
+
+      els.ruleWarning.classList.toggle("visible", Boolean(shouldWarn));
+      els.confirmBookingBtn.disabled = !range;
+
+      if (!range) {
+        els.selectionText.innerHTML = "Выберите свободные 30-минутные слоты в одном переходе. Повторный клик по занятому слоту покажет информацию о брони.";
+        return;
+      }
+
+      els.selectionText.innerHTML = `
+        Выбрано: <strong>${escapeHtml(transitionLabel(range.transition))}</strong>,
+        <strong>${range.startTime}-${range.endTime}</strong>
+        (${formatDuration(range.durationMinutes)}, ${people} ${people === 1 ? "участник" : "участника"}).
+      `;
+    }
+
+    function updatePlayingNow() {
+      const ufaNow = getUfaNowParts();
+      const nowDate = todayIso();
+      const nowMinutes = ufaNow.hour * 60 + ufaNow.minute;
+      const active = state.bookings.filter((booking) => {
+        return booking.date === nowDate &&
+          timeToMinutes(booking.startTime) <= nowMinutes &&
+          timeToMinutes(booking.endTime) > nowMinutes;
+      }).length;
+      els.playingNow.textContent = `🎵 Сейчас играют: ${active}`;
+    }
+
+    function openPlayingNowList() {
+      const ufaNow = getUfaNowParts();
+      const nowDate = todayIso();
+      const nowMinutes = ufaNow.hour * 60 + ufaNow.minute;
+      const activeBookings = state.bookings
+        .filter((booking) => booking.date === nowDate &&
+          timeToMinutes(booking.startTime) <= nowMinutes &&
+          timeToMinutes(booking.endTime) > nowMinutes)
+        .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+
+      if (!activeBookings.length) {
+        els.musiciansDetails.innerHTML = '<div class="empty-state">Сейчас никто не играет.</div>';
+        openModal(els.musiciansModal);
+        return;
+      }
+
+      els.musiciansDetails.innerHTML = `
+        <div class="booking-details">
+          ${activeBookings.map((booking) => `
+            <div>
+              <strong>${escapeHtml(booking.alias || booking.name)}</strong> - ${escapeHtml(transitionLabel(booking.transition))}
+              <div class="user-alias">${escapeHtml(booking.startTime)}-${escapeHtml(booking.endTime)}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+      openModal(els.musiciansModal);
+    }
+
+    function handleSlotClick(transition, slotIndex) {
+      const date = els.dateInput.value;
+      const booking = isSlotBooked(transition, date, slotIndex);
+
+      if (booking) {
+        showBookingDetails(booking);
+        return;
+      }
+
+      state.pendingWarningBooking = null;
+      const current = state.selection;
+      const sameTransition = current.length && current[0].transition === transition;
+      const indexes = current.map((item) => item.slotIndex);
+
+      if (!current.length || !sameTransition) {
+        state.selection = [{ transition, slotIndex }];
+      } else if (indexes.includes(slotIndex)) {
+        const min = Math.min(...indexes);
+        const max = Math.max(...indexes);
+        state.selection = slotIndex === min || slotIndex === max
+          ? current.filter((item) => item.slotIndex !== slotIndex)
+          : [{ transition, slotIndex }];
+      } else {
+        const min = Math.min(...indexes, slotIndex);
+        const max = Math.max(...indexes, slotIndex);
+        const isContiguous = max - min + 1 === current.length + 1;
+        const hasConflict = hasBookingConflict(transition, date, min, max);
+
+        if (isContiguous && !hasConflict) {
+          state.selection = Array.from({ length: max - min + 1 }, (_, offset) => ({
+            transition,
+            slotIndex: min + offset
+          }));
+        } else {
+          state.selection = [{ transition, slotIndex }];
+        }
+      }
+
+      renderCalendar();
+    }
+
+    function showBookingDetails(booking) {
+      const avatar = avatarById(booking.avatar);
+      const isOwner = state.currentUser && state.currentUser.id === booking.userId;
+      const ownerProfile = state.users.find((user) => user.id === booking.userId);
+      const bio = ownerProfile && ownerProfile.bio ? ownerProfile.bio : (booking.bio || "");
+      const music = ownerProfile && ownerProfile.music ? ownerProfile.music : (booking.music || "");
+      els.bookingDetails.innerHTML = `
+        <div class="booking-owner">
+          <div class="avatar" style="background:${avatar.color}22">${avatar.emoji}</div>
+          <div>
+            <div class="user-name">${escapeHtml(booking.name)}</div>
+            <div class="user-alias">${escapeHtml(booking.alias)}</div>
+          </div>
+        </div>
+        <div><strong>Переход:</strong> ${escapeHtml(transitionLabel(booking.transition))}</div>
+        <div><strong>Дата:</strong> ${escapeHtml(booking.date)}</div>
+        <div><strong>Время:</strong> ${escapeHtml(booking.startTime)}-${escapeHtml(booking.endTime)}</div>
+        ${bio ? `<div><strong>О музыканте:</strong> ${escapeHtml(bio)}</div>` : ""}
+        ${music ? `<div><strong>Музыка:</strong> ${escapeHtml(music)}</div>` : ""}
+        <button class="btn ghost" type="button" id="openProfileFromBookingBtn">Открыть профиль музыканта</button>
+        <div><strong>Создано:</strong> ${new Date(booking.createdAt).toLocaleString("ru-RU")}</div>
+        ${isOwner ? '<button class="btn danger" id="deleteBookingBtn">Удалить свою бронь</button>' : '<div class="empty-state">Удалить бронь может только её владелец.</div>'}
+      `;
+
+      const deleteButton = document.getElementById("deleteBookingBtn");
+      if (deleteButton) {
+        deleteButton.addEventListener("click", async () => {
+          state.bookings = state.bookings.filter((item) => item.id !== booking.id);
+          closeModal(els.bookingModal);
+          await persistData();
+          renderCalendar();
+          showToast("Бронь удалена");
+        });
+      }
+
+      const openProfileButton = document.getElementById("openProfileFromBookingBtn");
+      if (openProfileButton) {
+        openProfileButton.addEventListener("click", () => {
+          closeModal(els.bookingModal);
+          openMusicianProfile(booking.userId);
+        });
+      }
+
+      openModal(els.bookingModal);
+    }
+
+    function openMusicianProfile(userId) {
+      const musician = state.users.find((user) => user.id === userId);
+      const fallbackBooking = state.bookings.find((booking) => booking.userId === userId);
+      if (!musician) {
+        if (!fallbackBooking) {
+          showToast("Профиль музыканта не найден");
+          return;
+        }
+      }
+
+      const avatar = avatarById(musician ? musician.avatar : fallbackBooking.avatar);
+      const bio = musician && musician.bio ? musician.bio : (fallbackBooking && fallbackBooking.bio ? fallbackBooking.bio : "Пока не заполнено");
+      const music = musician && musician.music ? musician.music : (fallbackBooking && fallbackBooking.music ? fallbackBooking.music : "Пока не заполнено");
+      const name = musician ? musician.name : fallbackBooking.name;
+      const alias = musician ? musician.alias : fallbackBooking.alias;
+
+      els.musiciansDetails.innerHTML = `
+        <div class="booking-owner">
+          <div class="avatar" style="background:${avatar.color}22">${avatar.emoji}</div>
+          <div>
+            <div class="user-name">${escapeHtml(name)}</div>
+            <div class="user-alias">${escapeHtml(alias)}</div>
+          </div>
+        </div>
+        <div><strong>О музыканте:</strong> ${escapeHtml(bio)}</div>
+        <div><strong>Музыка:</strong> ${escapeHtml(music)}</div>
+      `;
+
+      openModal(els.musiciansModal);
+    }
+
+    function openMusiciansList() {
+      const sorted = [...state.users].sort((a, b) => a.alias.localeCompare(b.alias, "ru"));
+      if (!sorted.length) {
+        els.musiciansDetails.innerHTML = '<div class="empty-state">Пока нет зарегистрированных музыкантов.</div>';
+        openModal(els.musiciansModal);
+        return;
+      }
+
+      els.musiciansDetails.innerHTML = `
+        <p class="musicians-intro">
+          Список музыкантов. Если хотите узнать подробнее о музыканте, нажмите на его карточку.
+        </p>
+        <div class="musicians-list">
+          ${sorted.map((user) => {
+            const avatar = avatarById(user.avatar);
+            return `
+              <button type="button" class="musician-item" data-musician-id="${escapeHtml(user.id)}">
+                <div class="avatar" style="background:${avatar.color}22">${avatar.emoji}</div>
+                <div>
+                  <div class="user-name">${escapeHtml(user.name)}</div>
+                  <div class="user-alias">${escapeHtml(user.alias)}</div>
+                </div>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      `;
+
+      els.musiciansDetails.querySelectorAll("[data-musician-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const userId = button.getAttribute("data-musician-id");
+          if (userId) openMusicianProfile(userId);
+        });
+      });
+
+      openModal(els.musiciansModal);
+    }
+
+    async function createBookingFromSelection() {
+      if (!state.currentUser) {
+        showToast("Сначала войдите или зарегистрируйтесь");
+        openModal(els.loginModal);
+        return;
+      }
+
+      if (els.dateInput.value !== todayIso()) {
+        enforceTodayDate();
+        clearSelection();
+        showToast("Бронирование доступно только на текущий день по времени Уфы");
+        return;
+      }
+
+      const range = selectionRange();
+      if (!range) return;
+
+      if (hasBookingConflict(range.transition, els.dateInput.value, range.startSlot, range.endSlot)) {
+        state.selection = [];
+        renderCalendar();
+        showToast("Один из выбранных слотов уже занят");
+        return;
+      }
+
+      const people = Number(els.peopleCount.value);
+      const exceedsRule = (people === 1 && range.durationMinutes > 120) || (people === 2 && range.durationMinutes > 240);
+
+      if (exceedsRule && !state.pendingWarningBooking) {
+        state.pendingWarningBooking = { confirmAfterWarning: true };
+        openModal(els.warningModal);
+        return;
+      }
+
+      const booking = {
+        id: generateId("booking"),
+        transition: range.transition,
+        date: els.dateInput.value,
+        startTime: range.startTime,
+        endTime: range.endTime,
+        userId: state.currentUser.id,
+        name: state.currentUser.name,
+        alias: state.currentUser.alias,
+        avatar: state.currentUser.avatar,
+        bio: state.currentUser.bio || "",
+        music: state.currentUser.music || "",
+        _pendingLocal: true,
+        people,
+        createdAt: new Date().toISOString()
+      };
+
+      state.bookings.push(booking);
+      state.selection = [];
+      state.pendingWarningBooking = null;
+      closeModal(els.warningModal);
+      const saveResult = await persistData();
+      if (saveResult.synced) {
+        delete booking._pendingLocal;
+      }
+      LocalStore.write({ users: state.users, bookings: state.bookings, transitions: state.transitions });
+      renderCalendar();
+      showToast("Бронь создана");
+    }
+
+    function clearSelection() {
+      state.selection = [];
+      state.pendingWarningBooking = null;
+      renderCalendar();
+    }
+
+    function scrollToNow() {
+      if (els.dateInput.value !== todayIso()) {
+        els.dateInput.value = todayIso();
+        clearSelection();
+      }
+
+      const ufaNow = getUfaNowParts();
+      const currentMinutes = ufaNow.hour * 60 + ufaNow.minute;
+      const startMinutes = CONFIG.dayStartHour * 60;
+      const progress = Math.max(0, (currentMinutes - startMinutes) / CONFIG.slotMinutes);
+      const target = Math.max(0, progress * cssPixels("--slot-width") - 180);
+      els.calendarShell.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => {
+        els.calendarShell.scrollTo({ left: target, behavior: "smooth" });
+      }, 250);
+    }
+
+    async function handleRegister(event) {
+      event.preventDefault();
+      const formElement = event.currentTarget;
+      const form = new FormData(formElement);
+      const name = String(form.get("name")).trim();
+      const alias = String(form.get("alias")).trim();
+      const password = String(form.get("password"));
+      const bio = String(form.get("bio") || "").trim();
+      const music = String(form.get("music") || "").trim();
+      const phoneLast4Raw = String(form.get("phoneLast4") || "").trim();
+      const phoneLast4 = normalizePhoneLast4Input(phoneLast4Raw);
+      if (phoneLast4 === null) {
+        showToast("Последние 4 цифры: введите 4 цифры или оставьте поле пустым");
+        return;
+      }
+
+      if (!name || !alias || !password) {
+        showToast("Заполните все поля");
+        return;
+      }
+
+      const exists = state.users.some((user) => user.name.toLowerCase() === name.toLowerCase());
+      if (exists) {
+        showToast("Пользователь с таким именем уже существует");
+        return;
+      }
+
+      const user = {
+        id: generateId("user"),
+        name,
+        alias,
+        passwordHash: await hashPassword(password),
+        avatar: state.selectedAvatarId,
+        bio,
+        music,
+        phoneLast4,
+        createdAt: new Date().toISOString()
+      };
+
+      state.users.push(user);
+      saveSession(user);
+      const result = await persistData();
+      formElement.reset();
+      closeModal(els.registerModal);
+      updateSessionUi();
+      renderCalendar();
+      if (result.synced) {
+        showToast("Профиль создан");
+      } else {
+        showToast("Профиль создан, но онлайн-синхронизация не удалась");
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const name = String(form.get("name")).trim();
+      const password = String(form.get("password"));
+      const passwordHash = await hashPassword(password);
+      const user = state.users.find((item) => item.name.toLowerCase() === name.toLowerCase() && item.passwordHash === passwordHash);
+
+      if (!user) {
+        showToast("Неверное имя или пароль");
+        return;
+      }
+
+      saveSession(user);
+      event.currentTarget.reset();
+      closeModal(els.loginModal);
+      updateSessionUi();
+      renderCalendar();
+      showToast("Вы вошли");
+    }
+
+    function openEditProfile() {
+      if (!state.currentUser) return;
+      els.editProfileForm.alias.value = state.currentUser.alias || "";
+      els.editProfileForm.bio.value = state.currentUser.bio || "";
+      els.editProfileForm.music.value = state.currentUser.music || "";
+      els.editProfileForm.phoneLast4.value = state.currentUser.phoneLast4 || "";
+      openModal(els.editProfileModal);
+    }
+
+    async function handleEditProfile(event) {
+      event.preventDefault();
+      if (!state.currentUser) return;
+      const form = new FormData(event.currentTarget);
+      const alias = String(form.get("alias") || "").trim();
+      const bio = String(form.get("bio") || "").trim();
+      const music = String(form.get("music") || "").trim();
+      const phoneLast4Raw = String(form.get("phoneLast4") || "").trim();
+      const phoneLast4 = normalizePhoneLast4Input(phoneLast4Raw);
+      if (phoneLast4 === null) {
+        showToast("Последние 4 цифры: введите 4 цифры или оставьте поле пустым");
+        return;
+      }
+
+      if (!alias) {
+        showToast("Псевдоним не может быть пустым");
+        return;
+      }
+
+      const user = state.users.find((item) => item.id === state.currentUser.id);
+      if (!user) {
+        showToast("Не удалось найти профиль");
+        return;
+      }
+
+      user.alias = alias;
+      user.bio = bio;
+      user.music = music;
+      user.phoneLast4 = phoneLast4;
+      saveSession(user);
+
+      state.bookings = state.bookings.map((booking) => {
+        if (booking.userId !== user.id) return booking;
+        return { ...booking, alias, bio, music };
+      });
+
+      await persistData();
+      updateSessionUi();
+      renderCalendar();
+      closeModal(els.editProfileModal);
+      showToast("Профиль обновлен");
+    }
+
+    function bindEvents() {
+      els.openLoginBtn.addEventListener("click", () => openModal(els.loginModal));
+      els.openRegisterBtn.addEventListener("click", () => openModal(els.registerModal));
+      els.editProfileBtn.addEventListener("click", openEditProfile);
+      els.logoutBtn.addEventListener("click", () => {
+        clearSession();
+        updateSessionUi();
+        renderCalendar();
+        showToast("Вы вышли");
+      });
+
+      els.loginForm.addEventListener("submit", handleLogin);
+      els.registerForm.addEventListener("submit", handleRegister);
+      els.editProfileForm.addEventListener("submit", handleEditProfile);
+      els.dateInput.addEventListener("change", () => {
+        const currentUfaDate = todayIso();
+        if (els.dateInput.value !== currentUfaDate) {
+          els.dateInput.value = currentUfaDate;
+          showToast("Можно выбирать и бронировать только текущий день по времени Уфы");
+        }
+        clearSelection();
+      });
+      els.peopleCount.addEventListener("change", updateSelectionUi);
+      els.clearSelectionBtn.addEventListener("click", clearSelection);
+      els.confirmBookingBtn.addEventListener("click", createBookingFromSelection);
+      els.warningContinueBtn.addEventListener("click", createBookingFromSelection);
+      els.scrollNowBtn.addEventListener("click", scrollToNow);
+      els.zoomBtn.addEventListener("click", toggleZoomMode);
+      els.musiciansBtn.addEventListener("click", openMusiciansList);
+      els.playingNow.addEventListener("click", openPlayingNowList);
+      els.todayBtn.addEventListener("click", () => {
+        els.dateInput.value = todayIso();
+        clearSelection();
+        scrollToNow();
+      });
+      els.refreshBtn.addEventListener("click", async () => {
+        await loadData();
+        restoreSession();
+        clearSelection();
+        updateSessionUi();
+      });
+
+      document.querySelectorAll("[data-close-modal]").forEach((button) => {
+        button.addEventListener("click", () => closeAllModals());
+      });
+
+      document.querySelectorAll(".modal-backdrop").forEach((backdrop) => {
+        backdrop.addEventListener("click", (event) => {
+          if (event.target === backdrop) closeModal(backdrop);
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeAllModals();
+      });
+    }
+
+    async function init() {
+      enforceTodayDate();
+      applyZoomMode();
+      bindEvents();
+      renderAvatarGrid();
+      hydrateFromLocalStore();
+      restoreSession();
+      updateSessionUi();
+      renderCalendar();
+      window.setTimeout(scrollToNow, 250);
+
+      await loadData({ silent: true });
+      restoreSession();
+      updateSessionUi();
+      renderCalendar();
+
+      if (location.protocol === "file:" && SheetsStore.isConfigured()) {
+        showToast("Откройте через локальный сервер (http://), иначе браузер может блокировать запись в Google");
+      }
+
+      window.setInterval(async () => {
+        const previousDate = els.dateInput.value;
+        enforceTodayDate();
+        if (previousDate !== els.dateInput.value) {
+          clearSelection();
+          showToast("Наступил новый день в Уфе: доступно бронирование только на сегодня");
+        }
+        await loadData({ silent: true });
+        restoreSession();
+        updateSessionUi();
+        renderCalendar();
+      }, CONFIG.autoRefreshMs);
+
+      window.setInterval(() => {
+        renderNowLine();
+        updatePlayingNow();
+      }, 60000);
+
+      window.addEventListener("resize", applyZoomMode);
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -176,13 +176,15 @@ function setupSheets() {
 function seedSiteGatePasswordIfMissing(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow >= 2 && String(sheet.getRange(2, 1).getDisplayValue() || "").trim()) return;
-  sheet.getRange(2, 1, 2, 2).setValues([["siteGatePassword", "подземка"]]);
+  // getRange(r,c,numRows,numCols): (2,1,2,2) = 2 строки × 2 столбца — не одна строка!
+  sheet.getRange(2, 1, 1, 2).setValues([["siteGatePassword", "подземка"]]);
 }
 
 function readSettingsKeyValue(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return {};
-  const values = sheet.getRange(2, 1, lastRow, 2).getDisplayValues();
+  const numDataRows = lastRow - 1;
+  const values = sheet.getRange(2, 1, numDataRows, 2).getDisplayValues();
   const map = {};
   values.forEach((row) => {
     const key = String(row[0] || "").trim();

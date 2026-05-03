@@ -2513,7 +2513,15 @@
     }
 
     async function boot() {
-      if (SheetsStore.isConfigured()) {
+      // Не вешаем site-gate-pending до проверки токена: иначе CSS показывает .site-gate поверх
+      // атрибута hidden, и форма пароля «мигает» всё время ожидания SheetsStore.read().
+      let storedProbe = "";
+      try {
+        storedProbe = localStorage.getItem(CONFIG.siteGateStorageKey) || "";
+      } catch (e) {
+        storedProbe = "";
+      }
+      if (SheetsStore.isConfigured() && !storedProbe) {
         document.documentElement.classList.add("site-gate-pending");
       }
 

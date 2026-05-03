@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetMusic Ufa WhatsApp booking watcher
 // @namespace    https://streetmusic-ufa.local/
-// @version      0.1.11
+// @version      0.1.13
 // @description  Watches WhatsApp Web messages and sends booking-like messages to StreetMusic Ufa Google Apps Script.
 // @match        https://web.whatsapp.com/*
 // @grant        GM_xmlhttpRequest
@@ -12,6 +12,8 @@
 
 (function () {
   "use strict";
+
+  const SCRIPT_VERSION = "0.1.13";
 
   const CONFIG = {
     apiUrl: "https://script.google.com/macros/s/AKfycbzqBWxUthTdOt09gBxesmhghlBD927fm7glmh2xy5cERx5tz-fHTlQ5O4C1x0S77JHt/exec",
@@ -50,6 +52,17 @@
     "сергей король": "4779"
   };
 
+  const TRANSITION_ALIASES = [
+    { label: "Юношеская библиотека", aliases: ["юношеская библиотека", "юн библ"] },
+    { label: "Большой ЦР", aliases: ["большой цр", "цр большой", "большой", "большом"] },
+    { label: "Малый ЦР", aliases: ["малый цр", "цр малый", "малый", "малом"] },
+    { label: "Бульвар Славы", aliases: ["бульвар славы", "бульвар"] },
+    { label: "Спортивная", aliases: ["спортивная", "спортивной", "спортивную", "спорт"] },
+    { label: "Аграрный", aliases: ["аграрный", "аграрка", "аграрке", "аграрн"] },
+    { label: "Горсовет", aliases: ["горсовет", "горс"] },
+    { label: "Семья", aliases: ["семья", "семье", "семью"] }
+  ];
+
   function saveSeen() {
     sessionStorage.setItem("streetmusic-wa-seen", JSON.stringify([...seen].slice(-1000)));
   }
@@ -73,37 +86,65 @@
       .trim();
   }
 
-  function getMessageTextWithoutQuotedReply(node) {
+  function getMessageParts(node) {
     const quotedReply = node.querySelector("[data-testid='quoted-message'], [aria-label*='Цитируемое'], [aria-label*='Quoted']");
+    let quotedMessage = "";
     if (quotedReply) {
+      quotedMessage = getMessageText(quotedReply);
       quotedReply.remove();
     }
 
     const rawText = getMessageText(node);
-    return stripLikelyQuotedReplyText(rawText);
+    const fallback = !quotedMessage ? splitLikelyQuotedReplyText(rawText) : null;
+    const answerMessage = fallback ? fallback.message : stripLikelyQuotedReplyText(rawText);
+    const quoteText = quotedMessage || (fallback ? fallback.quotedMessage : "");
+    const derivedMessage =
+      deriveCancellationReplyMessage(answerMessage, quoteText) ||
+      deriveFollowUpReplyMessage(answerMessage, quoteText);
+
+    return {
+      message: derivedMessage || answerMessage,
+      answerMessage,
+      quotedMessage: quoteText
+    };
+  }
+
+  function getMessageTextWithoutQuotedReply(node) {
+    return getMessageParts(node).message;
   }
 
   function stripLikelyQuotedReplyText(text) {
+    const parts = splitLikelyQuotedReplyText(text);
+    if (parts) return parts.message;
+    return String(text || "").trim();
+  }
+
+  function splitLikelyQuotedReplyText(text) {
     const lines = String(text || "")
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
 
-    if (lines.length < 2) return String(text || "").trim();
+    if (lines.length < 2) return null;
 
     const lastLine = lines[lines.length - 1];
+    const quotedLines = lines.slice(0, -1);
     const hasQuotedContactLine = lines
       .slice(0, -1)
       .some((line) => /^~?\s*[\p{L}\p{N} ._-]{2,}(?:\s+\d{4})?$|^\+?\d[\d\s().-]{6,}\d$/u.test(line));
     const previousTextLooksBooking = lines
       .slice(0, -1)
       .some((line) => isLikelyBookingText(line));
+    const answerLooksRelevant = isLikelyBookingText(lastLine) || hasCancellationIntent(lastLine) || (hasFollowUpIntent(lastLine) && findTransitionMention(lastLine));
 
-    if (hasQuotedContactLine && previousTextLooksBooking && isLikelyBookingText(lastLine)) {
-      return lastLine;
+    if (hasQuotedContactLine && previousTextLooksBooking && answerLooksRelevant) {
+      return {
+        message: lastLine,
+        quotedMessage: quotedLines.join("\n")
+      };
     }
 
-    return String(text || "").trim();
+    return null;
   }
 
   function getPhoneLast4(value) {
@@ -129,6 +170,53 @@
       .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function normalizeRu(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[^\p{L}\p{N}\s:.—-]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function escapeRegexp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function containsWordPhrase(text, phrase) {
+    const escaped = escapeRegexp(phrase).replace(/\s+/g, "\\s+");
+    return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(text);
+  }
+
+  function findTransitionMention(text) {
+    const normalized = normalizeRu(text);
+    const aliases = TRANSITION_ALIASES
+      .flatMap((transition) => transition.aliases.map((alias) => ({ label: transition.label, alias })))
+      .sort((first, second) => second.alias.length - first.alias.length);
+
+    for (let index = 0; index < aliases.length; index += 1) {
+      const item = aliases[index];
+      if (containsWordPhrase(normalized, item.alias)) return item;
+    }
+
+    return null;
+  }
+
+  function hasFollowUpIntent(text) {
+    const normalized = normalizeRu(text);
+    return /(^|\s)(после\s+(вас|тебя|него|нее|них)|за\s+(вами|тобой|ним|ней|ними)|следом)(?=\s|$)/.test(normalized);
+  }
+
+  function hasCancellationIntent(text) {
+    return /(^|\s)(отмена|отменяю|снимаю|снять|форс)(?=\s|$)/.test(normalizeRu(text));
+  }
+
+  function hasExplicitBookingTime(text) {
+    const normalized = normalizeRu(text);
+    return /\b\d{1,2}\s*[:.]\s*\d{2}\b/.test(normalized) ||
+      /(^|[\s,.;:])(в|с|c)\s*\d{1,2}(?=\D|$)/.test(normalized);
   }
 
   function logVerbose(reason, detail) {
@@ -201,6 +289,141 @@
     return hasTime && hasPlaceOrIntent;
   }
 
+  function deriveFollowUpReplyMessage(answerMessage, quotedMessage) {
+    const answer = stripWhatsAppWebTimeGlue(String(answerMessage || "")).trim();
+    const quote = stripWhatsAppWebTimeGlue(String(quotedMessage || "")).trim();
+    if (!answer || !quote) return "";
+    if (!hasFollowUpIntent(answer) || hasExplicitBookingTime(answer)) return "";
+
+    const transition = findTransitionMention(answer);
+    if (!transition) return "";
+
+    const quotedRange = extractQuotedRangeForTransition(quote, transition.label);
+    if (!quotedRange) return "";
+
+    return `${transition.label} в ${quotedRange.endTime} встану`;
+  }
+
+  function deriveCancellationReplyMessage(answerMessage, quotedMessage) {
+    const answer = stripWhatsAppWebTimeGlue(String(answerMessage || "")).trim();
+    const quote = stripWhatsAppWebTimeGlue(String(quotedMessage || "")).trim();
+    if (!answer || !quote || !hasCancellationIntent(answer)) return "";
+
+    const explicitTransition = findTransitionMention(answer);
+    const quotedRange = explicitTransition
+      ? extractQuotedRangeForTransition(quote, explicitTransition.label)
+      : extractSingleQuotedRange(quote);
+    if (!quotedRange) return "";
+
+    return `отмена ${quotedRange.transition} в ${quotedRange.startTime}`;
+  }
+
+  function extractSingleQuotedRange(quotedMessage) {
+    const mentions = findTransitionMentionsInText(quotedMessage);
+    if (mentions.length !== 1) return null;
+    return extractQuotedRangeForTransition(quotedMessage, mentions[0].label);
+  }
+
+  function extractQuotedRangeForTransition(quotedMessage, transitionLabel) {
+    const matches = findTransitionMentionsInText(quotedMessage)
+      .filter((item) => item.label === transitionLabel);
+    if (matches.length !== 1) return null;
+
+    const current = matches[0];
+    const allMatches = findTransitionMentionsInText(quotedMessage)
+      .filter((item) => item.start > current.start)
+      .sort((first, second) => first.start - second.start);
+    const segmentEnd = allMatches.length ? allMatches[0].start : quotedMessage.length;
+    const segment = quotedMessage.slice(current.end, segmentEnd);
+    const times = extractBookingTimes(segment);
+    if (!times.length) return null;
+
+    const startMinutes = timeToMinutes(times[0].time);
+    const hasExplicitEnd = Boolean(times[1] && isExplicitRange(segment, times[0], times[1]) && timeToMinutes(times[1].time) > startMinutes);
+    const endMinutes = hasExplicitEnd ? timeToMinutes(times[1].time) : startMinutes + 120;
+
+    return {
+      transition: transitionLabel,
+      startTime: times[0].time,
+      endTime: minutesToTime(Math.min(24 * 60, endMinutes))
+    };
+  }
+
+  function findTransitionMentionsInText(text) {
+    const source = String(text || "").toLowerCase().replace(/ё/g, "е");
+    const aliases = TRANSITION_ALIASES
+      .flatMap((transition) => transition.aliases.map((alias) => ({ label: transition.label, alias })))
+      .sort((first, second) => second.alias.length - first.alias.length);
+    const matches = [];
+
+    aliases.forEach((item) => {
+      const regexp = new RegExp(`(^|\\s)(?:в|на)?\\s*(${escapeRegexp(item.alias).replace(/\s+/g, "\\s+")})(?=\\s|$)`, "g");
+      let match;
+      while ((match = regexp.exec(source))) {
+        const start = match.index + match[1].length;
+        const end = regexp.lastIndex;
+        if (!matches.some((existing) => start < existing.end && end > existing.start)) {
+          matches.push({ label: item.label, alias: item.alias, start, end });
+        }
+      }
+    });
+
+    return matches.sort((first, second) => first.start - second.start);
+  }
+
+  function extractBookingTimes(text) {
+    const result = [];
+    const regexp = /(^|[^\d])(\d{1,2})(?:\s*[:.]\s*(\d{2}))?(?=\s*(?:час|ч\b|до|-|—|$|[^\d]))/giu;
+    let match;
+
+    while ((match = regexp.exec(String(text || "")))) {
+      const hour = Number(match[2]);
+      const minute = match[3] === undefined ? 0 : Number(match[3]);
+      if (hour > 24 || minute > 59) continue;
+      result.push({
+        index: match.index,
+        endIndex: match.index + match[0].length,
+        time: normalizeBookingTime(hour, minute)
+      });
+    }
+
+    return result;
+  }
+
+  function normalizeBookingTime(hour, minute) {
+    const normalizedHour = hour > 0 && hour < 6 ? hour + 12 : hour;
+    const totalMinutes = normalizedHour * 60 + minute;
+    const rounded = Math.round(totalMinutes / 30) * 30;
+    return minutesToTime(Math.min(24 * 60, Math.max(0, rounded)));
+  }
+
+  function minutesToTime(totalMinutes) {
+    const hour = Math.floor(totalMinutes / 60);
+    const minute = totalMinutes % 60;
+    return `${pad2(hour)}:${pad2(minute)}`;
+  }
+
+  function timeToMinutes(time) {
+    const match = String(time || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return 0;
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  function pad2(value) {
+    return value < 10 ? `0${value}` : String(value);
+  }
+
+  function isExplicitRange(text, current, next) {
+    const gap = String(text || "")
+      .slice(current.endIndex, next.index)
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/\s+/g, " ")
+      .trim();
+    const atNext = String(text || "").charAt(next.index);
+    return /[-—]/.test(gap) || gap === "до" || /^до(\s|$)/.test(gap) || atNext === "-" || atNext === "—";
+  }
+
   /**
    * WhatsApp Web часто «приклеивает» к тексту пузыря служебное время списка (00:01),
    * метку «Изменено» и т.п.: «16:0000:01», «20.0000:01», «часов.00:00», «…15:30Изменено01:07».
@@ -212,6 +435,7 @@
       const before = s;
       s = s.replace(/изменено\s*\d{1,2}:\d{2}$/giu, "");
       s = s.replace(/(\d{1,2})[:.](\d{2})(\d{2}:\d{2})$/u, "$1:$2");
+      s = s.replace(/([^\d\s])\d{1,2}:\d{2}$/u, "$1");
       s = s.replace(/\.{2,}\s*\d{1,2}:\d{2}$/u, "");
       s = s.replace(/\.(?:[01]\d|2[0-3]):[0-5]\d$/u, "");
       if (s === before) break;
@@ -304,7 +528,8 @@
       return;
     }
 
-    const message = getMessageTextWithoutQuotedReply(root.cloneNode(true));
+    const messageParts = getMessageParts(root.cloneNode(true));
+    const message = messageParts.message;
     if (!message) {
       logVerbose("empty message text", "");
       return;
@@ -321,6 +546,10 @@
     saveSeen();
 
     if (!shouldSend) return;
+
+    if (CONFIG.debug && messageParts.answerMessage && messageParts.answerMessage !== message) {
+      console.log("[StreetMusic WA] reply normalized:", debugPreviewMessage(messageParts.answerMessage), "=>", debugPreviewMessage(message));
+    }
 
     /** Как для API: без «приклеенного» времени WA — иначе жалоба «…не появилась...01:02» уходит как бронь */
     const messageForHeuristic = stripWhatsAppWebTimeGlue(message);
@@ -412,7 +641,7 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
     window.setInterval(() => scanExisting(true, {}), CONFIG.scanIntervalMs);
-    console.log("[StreetMusic WA] watcher started; сегодня (Уфа):", ufaTodayIso());
+    console.log("[StreetMusic WA] watcher started; version:", SCRIPT_VERSION, "сегодня (Уфа):", ufaTodayIso());
     console.log("[StreetMusic WA] вручную догон: streetMusicWaBackfillToday()");
   }
 
@@ -422,6 +651,7 @@
       scanBackfillToday();
     };
     unsafeWindow.streetMusicWaUfaToday = ufaTodayIso;
+    unsafeWindow.streetMusicWaWatcherVersion = SCRIPT_VERSION;
   }
 
   if (document.readyState === "loading") {

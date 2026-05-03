@@ -379,6 +379,7 @@ function stripWhatsAppWebTimeGlue(value) {
     const before = s;
     s = s.replace(/изменено\s*\d{1,2}:\d{2}$/gi, "");
     s = s.replace(/(\d{1,2})[:.](\d{2})(\d{2}:\d{2})$/, "$1:$2");
+    s = s.replace(/([^\d\s])\d{1,2}:\d{2}$/, "$1");
     s = s.replace(/\.{2,}\s*\d{1,2}:\d{2}$/, "");
     s = s.replace(/\.(?:[01]\d|2[0-3]):[0-5]\d$/, "");
     if (s === before) break;
@@ -474,7 +475,12 @@ function createBookingFromWhatsApp(payload) {
 
 function parseWhatsAppBookingMessage(message, transitions, fallbackDate) {
   const normalized = normalizeRu(message);
-  const isCancellation = /\b(отмена|отменяю|снимаю|снять|форс)\b/.test(normalized);
+  const isCancellation = isWhatsAppCancellationText(normalized);
+  if (isCancellation) {
+    const cancellationParsed = parseWhatsAppCancellationMessage(message, transitions, fallbackDate);
+    if (cancellationParsed.actions.length) return cancellationParsed;
+  }
+
   const clauses = splitWhatsAppClauses(message);
   const actions = [];
   const ignored = [];
@@ -482,7 +488,7 @@ function parseWhatsAppBookingMessage(message, transitions, fallbackDate) {
 
   clauses.forEach((clause) => {
     const clauseNormalized = normalizeRu(clause);
-    const clauseIsCancel = /\b(отмена|отменяю|снимаю|снять|форс)\b/.test(clauseNormalized);
+    const clauseIsCancel = isWhatsAppCancellationText(clauseNormalized);
     const transition = resolveTransitionFromText(clause, transitions) || lastTransition;
     const times = extractTimes(clause);
 
@@ -521,8 +527,43 @@ function parseWhatsAppBookingMessage(message, transitions, fallbackDate) {
 
   if (isCancellation && !actions.some((action) => action.type === "cancel")) {
     const transition = resolveTransitionFromText(message, transitions);
-    actions.push({ type: "cancel", transition, date: fallbackDate, startTime: "" });
+    if (transition) {
+      actions.push({ type: "cancel", transition, date: fallbackDate, startTime: "" });
+    }
   }
+
+  return { actions, ignored };
+}
+
+function isWhatsAppCancellationText(normalizedText) {
+  return /(^|\s)(отмена|отменяю|снимаю|снять|форс)(?=\s|$)/.test(normalizedText);
+}
+
+function parseWhatsAppCancellationMessage(message, transitions, fallbackDate) {
+  const cleaned = String(message || "")
+    .replace(/(^|\s)(отмена|отменяю|снимаю|снять|форс)(?=\s|$)/gi, " ")
+    .trim();
+  const clauses = splitWhatsAppClauses(cleaned || message);
+  const actions = [];
+  const ignored = [];
+  let lastTransition = "";
+
+  clauses.forEach((clause) => {
+    const transition = resolveTransitionFromText(clause, transitions) || lastTransition;
+    const times = extractTimes(clause);
+    if (!transition) {
+      ignored.push({ clause, reason: "no_transition" });
+      return;
+    }
+
+    lastTransition = transition;
+    actions.push({
+      type: "cancel",
+      transition,
+      date: fallbackDate,
+      startTime: times.length ? times[0].time : ""
+    });
+  });
 
   return { actions, ignored };
 }
